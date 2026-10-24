@@ -25,12 +25,19 @@ class SystemSeeder extends Seeder
                 'subcategories' => ['view' => 'Consultar subcategorías', 'manage' => 'Administrar subcategorías'],
                 'brands' => ['view' => 'Consultar marcas', 'manage' => 'Administrar marcas'],
                 'units' => ['view' => 'Consultar unidades', 'manage' => 'Administrar unidades'],
+                'suppliers' => ['view' => 'Consultar proveedores', 'create' => 'Crear proveedores', 'update' => 'Editar proveedores', 'deactivate' => 'Desactivar proveedores'],
+                'inventory' => ['view' => 'Consultar inventario', 'adjust' => 'Registrar ajustes de inventario', 'void_adjustment' => 'Anular ajustes de inventario'],
+                'purchases' => ['view' => 'Consultar compras', 'create' => 'Crear compras', 'confirm' => 'Confirmar compras', 'void' => 'Anular compras'],
             ];
             $permissions = [];
+            $created = [];
             foreach ($definitions as $group => $actions) {
                 foreach ($actions as $action => $name) {
                     $code = $group.'.'.$action;
                     $permissions[$code] = Permission::query()->firstOrCreate(['code' => $code], ['name' => $name, 'group' => $group]);
+                    if ($permissions[$code]->wasRecentlyCreated) {
+                        $created[] = $code;
+                    }
                 }
             }
 
@@ -38,10 +45,10 @@ class SystemSeeder extends Seeder
             $catalogWrite = array_values(array_filter(array_keys($permissions), fn ($code) => in_array(explode('.', $code)[0], ['products', 'categories', 'subcategories', 'brands', 'units'], true)));
             $roles = [
                 'admin' => ['Administrador', 'Acceso administrativo de la fase base.', array_keys($permissions)],
-                'purchasing' => ['Compras', 'Mantenimiento de productos y catálogos; operaciones comerciales pendientes.', $catalogWrite],
+                'purchasing' => ['Compras', 'Mantenimiento de proveedores, productos y catálogos; recepción de mercadería.', [...$catalogWrite, 'suppliers.view', 'suppliers.create', 'suppliers.update', 'suppliers.deactivate', 'purchases.view', 'purchases.create', 'purchases.confirm', 'inventory.view']],
                 'seller' => ['Vendedor', 'Consulta de productos y precios de venta; sin acceso a costos.', $catalogRead],
                 'supervisor' => ['Supervisor', 'Supervisión de productos, costos de referencia y configuración; sin escrituras.', [...$catalogRead, 'products.view_cost', 'settings.view']],
-                'warehouse' => ['Bodega', 'Consulta de productos y catálogos; las operaciones de inventario corresponden a una etapa posterior.', $catalogRead],
+                'warehouse' => ['Bodega', 'Consulta de productos y catálogos; ajustes de inventario autorizados.', [...$catalogRead, 'inventory.adjust']],
                 'viewer' => ['Consulta', 'Lectura de catálogos expresamente autorizados; sin acceso a costos.', $catalogRead],
             ];
             foreach ($roles as $code => [$name, $description, $codes]) {
@@ -49,6 +56,9 @@ class SystemSeeder extends Seeder
                 if ($role->wasRecentlyCreated) {
                     // Defaults are assigned once. Rerunning never restores revoked grants.
                     $role->permissions()->attach(array_map(fn ($permissionCode) => $permissions[$permissionCode]->getKey(), $codes));
+                } elseif (($newGrants = array_values(array_intersect($codes, $created))) !== []) {
+                    // A permission created by this run reaches existing roles once; later runs never restore revoked grants.
+                    $role->permissions()->syncWithoutDetaching(array_map(fn ($permissionCode) => $permissions[$permissionCode]->getKey(), $newGrants));
                 }
             }
 

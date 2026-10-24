@@ -45,13 +45,14 @@ class PurchaseSchemaTest extends DatabaseTestCase
         $this->productB = DB::table('products')->insertGetId(['sku' => 'T-DB001-B', 'name' => 'Producto B', 'category_id' => $categoryId, 'unit_id' => $this->unitId]);
     }
 
-    public function test_suppliers_get_a_code_and_require_a_unique_normalized_tax_id(): void
+    public function test_suppliers_get_a_code_and_allow_an_optional_unique_normalized_tax_id(): void
     {
         $id = $this->supplier('Proveedor 1', '123-4');
         $this->assertMatchesRegularExpression('/\APRV-\d{6}\z/', (string) DB::table('suppliers')->where('id', $id)->value('code'));
 
         $this->assertRejected(self::UNIQUE, fn () => $this->supplier('Otro', ' 1234 '), 'NIT duplicado tras normalizar');
-        $this->assertRejected(self::NOT_NULL, fn () => DB::table('suppliers')->insert(['name' => 'Sin NIT', 'tax_id' => null]), 'NIT nulo');
+        $optionalId = DB::table('suppliers')->insertGetId(['name' => 'Sin NIT', 'tax_id' => null]);
+        $this->assertNull(DB::table('suppliers')->where('id', $optionalId)->value('tax_id'));
         $this->assertRejected(self::CHECK, fn () => $this->supplier('Solo guiones', ' - - '), 'NIT solo guiones o espacios');
         $this->assertRejected(self::CHECK, fn () => $this->supplier('  ', '555-5'), 'nombre vacío');
     }

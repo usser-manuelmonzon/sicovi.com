@@ -37,7 +37,9 @@ class RoleProfilesTest extends DatabaseTestCase
         sort($expected);
 
         $this->assertSame($expected, Role::where('code', 'supervisor')->sole()->permissions()->orderBy('code')->pluck('code')->all());
-        $this->assertSame(self::CATALOG_READ, Role::where('code', 'warehouse')->sole()->permissions()->orderBy('code')->pluck('code')->all());
+        $expectedWarehouse = [...self::CATALOG_READ, 'inventory.adjust'];
+        sort($expectedWarehouse);
+        $this->assertSame($expectedWarehouse, Role::where('code', 'warehouse')->sole()->permissions()->orderBy('code')->pluck('code')->all());
         $this->assertSame(self::CATALOG_READ, Role::where('code', 'seller')->sole()->permissions()->orderBy('code')->pluck('code')->all());
         $this->assertSame(self::CATALOG_READ, Role::where('code', 'viewer')->sole()->permissions()->orderBy('code')->pluck('code')->all());
     }
