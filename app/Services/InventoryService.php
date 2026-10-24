@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\InventoryAdjustment;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -33,7 +34,7 @@ class InventoryService
     {
         try {
             return $this->applyAdjustmentOnce($actor, $data);
-        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+        } catch (UniqueConstraintViolationException $e) {
             $key = trim((string) ($data['idempotency_key'] ?? ''));
             $existing = $key !== '' ? InventoryAdjustment::where('created_by', $actor->id)->where('applied_idempotency_key', $key)->first() : null;
             if ($existing) {
@@ -44,7 +45,7 @@ class InventoryService
     }
 
     /**
-     * @param array{type:string,adjustment_date:string,reason:string,reference?:?string,notes?:?string,idempotency_key?:?string,lines:list<array{product_id:int,quantity?:string,counted_quantity?:string}>} $data
+     * @param  array{type:string,adjustment_date:string,reason:string,reference?:?string,notes?:?string,idempotency_key?:?string,lines:list<array{product_id:int,quantity?:string,counted_quantity?:string}>}  $data
      */
     private function applyAdjustmentOnce(User $actor, array $data): InventoryAdjustment
     {
@@ -178,7 +179,7 @@ class InventoryService
      * Para PurchaseService, dentro de SU transaccion: una entrada por linea al confirmar.
      * La autorizacion de la compra es responsabilidad del llamador.
      *
-     * @param list<array{purchase_item_id:int,product_id:int,quantity:string}> $lines
+     * @param  list<array{purchase_item_id:int,product_id:int,quantity:string}>  $lines
      */
     public function receivePurchaseLines(User $actor, int $warehouseId, array $lines): void
     {
@@ -207,7 +208,7 @@ class InventoryService
     /**
      * Para PurchaseService al anular: la compra debe estar ya marcada 'voided' en esta transaccion.
      *
-     * @param list<int> $purchaseItemIds
+     * @param  list<int>  $purchaseItemIds
      */
     public function reversePurchaseLines(User $actor, int $warehouseId, array $purchaseItemIds, string $reason): void
     {
@@ -300,10 +301,13 @@ class InventoryService
                 $this->invalid('lines', 'Producto no válido.');
             }
             $productId = (int) $productId;
+            if (! isset($line[$field]) || trim((string) $line[$field]) === '') {
+                continue;
+            }
             if (isset($result[$productId])) {
                 $this->invalid('lines', 'Un producto no puede repetirse en el mismo ajuste.');
             }
-            if (! isset($line[$field]) || ! is_string($line[$field])) {
+            if (! is_string($line[$field])) {
                 $this->invalid('lines', 'Cada línea debe traer su cantidad como texto decimal.');
             }
             $result[$productId] = $line;

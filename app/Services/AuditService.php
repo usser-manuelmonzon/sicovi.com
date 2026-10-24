@@ -10,8 +10,10 @@ use App\Models\Company;
 use App\Models\InventoryAdjustment;
 use App\Models\Permission;
 use App\Models\Product;
+use App\Models\Purchase;
 use App\Models\Role;
 use App\Models\Subcategory;
+use App\Models\Supplier;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -34,6 +36,8 @@ class AuditService
         Unit::class => ['code', 'name', 'abbreviation', 'decimal_places', 'active'],
         Product::class => ['sku', 'barcode', 'name', 'description', 'category_id', 'subcategory_id', 'brand_id', 'unit_id', 'presentation', 'sale_price', 'reference_cost', 'minimum_stock', 'location', 'active'],
         InventoryAdjustment::class => ['code', 'warehouse_id', 'type', 'adjustment_date', 'reason', 'reference', 'state', 'voided_by', 'void_reason'],
+        Supplier::class => ['code', 'name', 'tax_id', 'contact_name', 'phone', 'email', 'address', 'notes', 'active'],
+        Purchase::class => ['code', 'supplier_id', 'warehouse_id', 'document_date', 'supplier_reference', 'state', 'total', 'created_by', 'confirmed_by', 'confirmed_at', 'voided_by', 'voided_at', 'void_reason'],
     ];
 
     public function record(?User $actor, string $action, Model $entity, array $before = [], array $after = [], ?string $reason = null): void

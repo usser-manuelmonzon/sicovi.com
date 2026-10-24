@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\InventoryAdjustment;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\DecimalService;

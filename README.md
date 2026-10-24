@@ -8,7 +8,7 @@ Laravel con PostgreSQL; inicio/cierre de sesión; cuentas activas, cambio y rest
 
 Cada producto nace con un saldo cero, en la misma transacción. No existe un formulario de stock. El costo de referencia solo se envía a usuarios con `products.view_cost`. No hay eliminación de registros con historial.
 
-Proveedores, compras e inventario operativo corresponden a Yourguen; clientes y ventas a Kevin; anulaciones, consultas comerciales e integración a Luis. Esta entrega no implementa esos módulos ni el dossier académico completo.
+Proveedores, compras e inventario operativo corresponden a Yourgen; clientes y ventas a Kevin; anulaciones, consultas comerciales e integración a Luis. Esta entrega no implementa esos módulos ni el dossier académico completo.
 
 Se revisaron el TXT maestro de Manuel, las tres páginas de la guía académica y la imagen de distribución vigente. La guía propone cinco alumnos; la organización vigente del equipo tiene cuatro. La venta funcional es una exigencia del proyecto integrado, no de esta primera entrega. Los rótulos inconsistentes de la tabla académica no crean un módulo adicional de servicios. Las fechas del 19 al 27 y el cierre a las 21:00 son acuerdos internos del equipo.
 
@@ -172,8 +172,8 @@ El ejemplo exige una carpeta real elegida por el operador. La base de verificaci
 - `docs/contratos/CONTINUIDAD_MODULOS.md`: servicios actuales y trabajo futuro.
 - `docs/pruebas/MATRIZ_MANUEL.md`: M-01 a M-20 y evidencia.
 - `docs/cambios/MANUEL-01_base_acceso_catalogos.txt`: instalación, actualización y restricciones.
-- `docs/entregas/01_MANUEL_A_YOURGUEN.md`: recepción técnica y tareas del siguiente autor.
+- `docs/entregas/01_MANUEL_A_YOURGEN.md`: recepción técnica y tareas del siguiente autor.
 
-Está pendiente que Yourguen u otro compañero instale y confirme en su propia PC. No se verificaron Jira ni permisos remotos y no se crearon incidencias, commits, PR, invitaciones o despliegues. GitHub sincroniza código; cada integrante prepara su propia BD local.
+Está pendiente que Yourgen u otro compañero instale y confirme en su propia PC. No se verificaron Jira ni permisos remotos y no se crearon incidencias, commits, PR, invitaciones o despliegues. GitHub sincroniza código; cada integrante prepara su propia BD local.
 
 Referencias técnicas consultadas: [Laravel 13](https://laravel.com/docs/13.x/releases), [PostgreSQL 17: esquemas](https://www.postgresql.org/docs/17/ddl-schemas.html), [collations Unicode](https://www.postgresql.org/docs/17/collation.html), [Vite 7](https://vite.dev/blog/announcing-vite7). El ZIP portable procede del [distribuidor oficial EDB](https://get.enterprisedb.com/postgresql/postgresql-17.11-3-windows-x64-binaries.zip); SHA256 comprobado: `4b8db0930c38f6ef845db919551dedda3b6b845aeb0927b3d79a6e8e9e4537cf`.

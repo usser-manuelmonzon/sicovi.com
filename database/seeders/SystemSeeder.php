@@ -25,7 +25,9 @@ class SystemSeeder extends Seeder
                 'subcategories' => ['view' => 'Consultar subcategorías', 'manage' => 'Administrar subcategorías'],
                 'brands' => ['view' => 'Consultar marcas', 'manage' => 'Administrar marcas'],
                 'units' => ['view' => 'Consultar unidades', 'manage' => 'Administrar unidades'],
-                'inventory' => ['adjust' => 'Registrar y anular ajustes de inventario'],
+                'suppliers' => ['view' => 'Consultar proveedores', 'create' => 'Crear proveedores', 'update' => 'Editar proveedores', 'deactivate' => 'Desactivar proveedores'],
+                'inventory' => ['view' => 'Consultar inventario', 'adjust' => 'Registrar ajustes de inventario', 'void_adjustment' => 'Anular ajustes de inventario'],
+                'purchases' => ['view' => 'Consultar compras', 'create' => 'Crear compras', 'confirm' => 'Confirmar compras', 'void' => 'Anular compras'],
             ];
             $permissions = [];
             $created = [];
@@ -43,7 +45,7 @@ class SystemSeeder extends Seeder
             $catalogWrite = array_values(array_filter(array_keys($permissions), fn ($code) => in_array(explode('.', $code)[0], ['products', 'categories', 'subcategories', 'brands', 'units'], true)));
             $roles = [
                 'admin' => ['Administrador', 'Acceso administrativo de la fase base.', array_keys($permissions)],
-                'purchasing' => ['Compras', 'Mantenimiento de productos y catálogos; operaciones comerciales pendientes.', $catalogWrite],
+                'purchasing' => ['Compras', 'Mantenimiento de proveedores, productos y catálogos; recepción de mercadería.', [...$catalogWrite, 'suppliers.view', 'suppliers.create', 'suppliers.update', 'suppliers.deactivate', 'purchases.view', 'purchases.create', 'purchases.confirm', 'inventory.view']],
                 'seller' => ['Vendedor', 'Consulta de productos y precios de venta; sin acceso a costos.', $catalogRead],
                 'supervisor' => ['Supervisor', 'Supervisión de productos, costos de referencia y configuración; sin escrituras.', [...$catalogRead, 'products.view_cost', 'settings.view']],
                 'warehouse' => ['Bodega', 'Consulta de productos y catálogos; ajustes de inventario autorizados.', [...$catalogRead, 'inventory.adjust']],
