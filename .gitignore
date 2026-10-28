@@ -32,3 +32,4 @@ Thumbs.db
 *.backup
 *.key
 /docs/evidencias/manuel/*.local.*
+/docs/cambios/YOURGEN-DB-003-cambios.txt

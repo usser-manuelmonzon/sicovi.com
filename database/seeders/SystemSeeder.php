@@ -18,6 +18,7 @@ class SystemSeeder extends Seeder
             DB::select('select pg_advisory_xact_lock(74126001)');
             $definitions = [
                 'users' => ['view' => 'Consultar usuarios', 'create' => 'Crear usuarios', 'update' => 'Editar usuarios', 'deactivate' => 'Desactivar usuarios', 'reset_password' => 'Restablecer contraseñas'],
+                'sales' => ['view' => 'Consultar ventas','create' => 'Crear ventas','update' => 'Editar ventas','confirm' => 'Confirmar ventas'],
                 'roles' => ['view' => 'Consultar roles', 'manage' => 'Administrar roles y permisos'],
                 'settings' => ['view' => 'Consultar configuración', 'update' => 'Editar configuración'],
                 'products' => ['view' => 'Consultar productos', 'create' => 'Crear productos', 'update' => 'Editar productos', 'deactivate' => 'Desactivar productos', 'view_cost' => 'Consultar costos de referencia'],
@@ -25,12 +26,20 @@ class SystemSeeder extends Seeder
                 'subcategories' => ['view' => 'Consultar subcategorías', 'manage' => 'Administrar subcategorías'],
                 'brands' => ['view' => 'Consultar marcas', 'manage' => 'Administrar marcas'],
                 'units' => ['view' => 'Consultar unidades', 'manage' => 'Administrar unidades'],
+                'suppliers' => ['view' => 'Consultar proveedores', 'create' => 'Crear proveedores', 'update' => 'Editar proveedores', 'deactivate' => 'Desactivar proveedores'],
+                'customers' => ['view' => 'Consultar clientes', 'create' => 'Crear clientes', 'update' => 'Editar clientes', 'deactivate' => 'Desactivar clientes'],
+                'inventory' => ['view' => 'Consultar inventario', 'adjust' => 'Registrar ajustes de inventario', 'void_adjustment' => 'Anular ajustes de inventario'],
+                'purchases' => ['view' => 'Consultar compras', 'create' => 'Crear compras', 'confirm' => 'Confirmar compras', 'void' => 'Anular compras'],
             ];
             $permissions = [];
+            $created = [];
             foreach ($definitions as $group => $actions) {
                 foreach ($actions as $action => $name) {
                     $code = $group.'.'.$action;
                     $permissions[$code] = Permission::query()->firstOrCreate(['code' => $code], ['name' => $name, 'group' => $group]);
+                    if ($permissions[$code]->wasRecentlyCreated) {
+                        $created[] = $code;
+                    }
                 }
             }
 
@@ -38,10 +47,10 @@ class SystemSeeder extends Seeder
             $catalogWrite = array_values(array_filter(array_keys($permissions), fn ($code) => in_array(explode('.', $code)[0], ['products', 'categories', 'subcategories', 'brands', 'units'], true)));
             $roles = [
                 'admin' => ['Administrador', 'Acceso administrativo de la fase base.', array_keys($permissions)],
-                'purchasing' => ['Compras', 'Mantenimiento de productos y catálogos; operaciones comerciales pendientes.', $catalogWrite],
-                'seller' => ['Vendedor', 'Consulta de productos y precios de venta; sin acceso a costos.', $catalogRead],
+                'purchasing' => ['Compras', 'Mantenimiento de proveedores, productos y catálogos; recepción de mercadería.', [...$catalogWrite, 'suppliers.view', 'suppliers.create', 'suppliers.update', 'suppliers.deactivate', 'purchases.view', 'purchases.create', 'purchases.confirm', 'inventory.view']],
+                'seller' => ['Vendedor', 'Consulta de productos y precios de venta; sin acceso a costos.', [...$catalogRead, 'customers.view', 'customers.create', 'customers.update','sales.view', 'sales.create', 'sales.update', 'sales.confirm',]],
                 'supervisor' => ['Supervisor', 'Supervisión de productos, costos de referencia y configuración; sin escrituras.', [...$catalogRead, 'products.view_cost', 'settings.view']],
-                'warehouse' => ['Bodega', 'Consulta de productos y catálogos; las operaciones de inventario corresponden a una etapa posterior.', $catalogRead],
+                'warehouse' => ['Bodega', 'Consulta de productos, existencias y catálogos; ajustes de inventario autorizados.', [...$catalogRead, 'inventory.view', 'inventory.adjust', 'inventory.void_adjustment']],
                 'viewer' => ['Consulta', 'Lectura de catálogos expresamente autorizados; sin acceso a costos.', $catalogRead],
             ];
             foreach ($roles as $code => [$name, $description, $codes]) {
@@ -49,6 +58,9 @@ class SystemSeeder extends Seeder
                 if ($role->wasRecentlyCreated) {
                     // Defaults are assigned once. Rerunning never restores revoked grants.
                     $role->permissions()->attach(array_map(fn ($permissionCode) => $permissions[$permissionCode]->getKey(), $codes));
+                } elseif (($newGrants = array_values(array_intersect($codes, $created))) !== []) {
+                    // A permission created by this run reaches existing roles once; later runs never restore revoked grants.
+                    $role->permissions()->syncWithoutDetaching(array_map(fn ($permissionCode) => $permissions[$permissionCode]->getKey(), $newGrants));
                 }
             }
 

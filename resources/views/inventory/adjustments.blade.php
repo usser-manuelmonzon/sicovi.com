@@ -1,0 +1,14 @@
+@extends('layouts.app')
+@section('title', 'Historial de ajustes')
+@section('content')
+<div class="page-heading"><div><p class="eyebrow">INVENTARIO OPERATIVO</p><h1>Historial de ajustes</h1><p class="text-secondary">Consulte y controle las modificaciones aplicadas al inventario.</p></div>@can('inventory.adjust')<a class="btn btn-primary" href="{{ route('inventory.adjustments.create') }}">Registrar ajuste</a>@endcan</div>
+<form class="filter-panel row g-3 mb-4">
+    <div class="col-md-3"><label class="form-label" for="q">Código o motivo</label><input class="form-control" id="q" name="q" value="{{ request('q') }}"></div>
+    <div class="col-md-2"><label class="form-label" for="type">Tipo</label><select class="form-select" id="type" name="type"><option value="">Todos</option>@foreach(['opening'=>'Inventario inicial','extraordinary_entry'=>'Entrada extraordinaria','count_adjustment'=>'Ajuste por conteo'] as $key => $label)<option value="{{ $key }}" @selected(request('type') === $key)>{{ $label }}</option>@endforeach</select></div>
+    <div class="col-md-2"><label class="form-label" for="state">Estado</label><select class="form-select" id="state" name="state"><option value="">Todos</option><option value="applied" @selected(request('state') === 'applied')>Aplicado</option><option value="voided" @selected(request('state') === 'voided')>Anulado</option></select></div>
+    <div class="col-md-2"><label class="form-label" for="date_from">Desde</label><input class="form-control" type="date" id="date_from" name="date_from" value="{{ request('date_from') }}"></div>
+    <div class="col-md-2"><label class="form-label" for="date_to">Hasta</label><input class="form-control" type="date" id="date_to" name="date_to" value="{{ request('date_to') }}"></div>
+    <div class="col-md-1 d-flex align-items-end"><button class="btn btn-primary w-100">Buscar</button></div>
+</form>
+<div class="surface table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Código</th><th>Fecha</th><th>Tipo</th><th>Responsable</th><th>Motivo</th><th>Estado</th><th></th></tr></thead><tbody>@forelse($adjustments as $adjustment)<tr><td><a class="record-link" href="{{ route('inventory.adjustments.show', $adjustment) }}">{{ $adjustment->code }}</a></td><td>{{ $adjustment->adjustment_date?->format('d/m/Y') }}</td><td>{{ ['opening'=>'Inventario inicial','extraordinary_entry'=>'Entrada extraordinaria','count_adjustment'=>'Ajuste por conteo'][$adjustment->type] ?? $adjustment->type }}</td><td>{{ $adjustment->creator?->name }}</td><td>{{ $adjustment->reason }}</td><td>{{ $adjustment->state === 'applied' ? 'Aplicado' : 'Anulado' }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ route('inventory.adjustments.show', $adjustment) }}">Ver</a></td></tr>@empty<tr><td colspan="7" class="empty-state">No hay ajustes con esos filtros.</td></tr>@endforelse</tbody></table><div class="p-3">{{ $adjustments->links() }}</div></div>
+@endsection
