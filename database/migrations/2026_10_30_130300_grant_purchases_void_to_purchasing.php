@@ -1,21 +1,15 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
     public function up(): void
     {
-        DB::transaction(function (): void {
-            $permissionId = DB::table('permissions')->where('code', 'purchases.void')->value('id');
-            $purchasingRoleId = DB::table('roles')->where('code', 'purchasing')->value('id');
-            if ($permissionId !== null && $purchasingRoleId !== null) {
-                DB::table('role_permissions')->insertOrIgnore([
-                    'role_id' => $purchasingRoleId, 'permission_id' => $permissionId,
-                ]);
-            }
-        });
+        // purchases.void predates this migration. An absent pivot may mean
+        // an intentional revocation, so existing assignments require review
+        // and an explicit change in Administración > Roles.
+        // SystemSeeder grants this permission only when creating a new role.
     }
 
     public function down(): void

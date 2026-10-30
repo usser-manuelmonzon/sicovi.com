@@ -12,16 +12,16 @@
 
 @php
     $catalogoActual = request()->route('catalog');
-    $inventarioActivo = request()->routeIs('products.*')
+    $almacenCentralActivo = request()->routeIs('products.*')
         || (request()->routeIs('catalogs.*')
             && in_array($catalogoActual, ['categories', 'subcategories', 'brands', 'units'], true));
-    $seguridadActiva = request()->routeIs('users.*') || request()->routeIs('roles.*');
+    $administracionActiva = request()->routeIs('users.*') || request()->routeIs('roles.*');
     $configuracionActiva = request()->routeIs('settings.*');
-    $comprasActivo = request()->routeIs('customers.*')
-    || request()->routeIs('suppliers.*')
-    || request()->routeIs('purchases.*')
-    || request()->routeIs('sales.*');
+    $comprasActivo = request()->routeIs('suppliers.*') || request()->routeIs('purchases.*');
+    $ventasActiva = request()->routeIs('customers.*') || request()->routeIs('sales.*');
     $inventarioOperativoActivo = request()->routeIs('inventory.*');
+    $reportesActivo = request()->routeIs('reports.*');
+    $reporteActual = request('report', 'sales');
 @endphp
 
 <div class="sc-shell">
@@ -65,15 +65,15 @@
             </a>
 
             @canany(['products.view', 'categories.view', 'subcategories.view', 'brands.view', 'units.view'])
-                <details class="sc-group" {{ $inventarioActivo ? 'open' : '' }}>
-                    <summary class="{{ $inventarioActivo ? 'is-active' : '' }}" title="Inventario">
+                <details class="sc-group" {{ $almacenCentralActivo ? 'open' : '' }}>
+                    <summary class="{{ $almacenCentralActivo ? 'is-active' : '' }}" title="Almacén Central">
                         <svg class="sc-icon" viewBox="0 0 24 24" aria-hidden="true">
                             <rect x="3" y="3" width="7" height="7" rx="1"/>
                             <rect x="14" y="3" width="7" height="7" rx="1"/>
                             <rect x="3" y="14" width="7" height="7" rx="1"/>
                             <rect x="14" y="14" width="7" height="7" rx="1"/>
                         </svg>
-                        <span class="sc-label">Inventario</span>
+                        <span class="sc-label">Almacén Central</span>
                         <svg class="sc-chevron" viewBox="0 0 24 24" aria-hidden="true">
                             <path d="m9 18 6-6-6-6"/>
                         </svg>
@@ -106,45 +106,75 @@
                 </details>
             @endcanany
 
-            @canany(['customers.view', 'suppliers.view', 'purchases.view', 'inventory.view', 'sales.view', 'reports.view'])
-                <details class="sc-group" {{ ($comprasActivo || $inventarioOperativoActivo || request()->routeIs('reports.*')) ? 'open' : '' }}>
-                    <summary class="{{ ($comprasActivo || $inventarioOperativoActivo || request()->routeIs('reports.*')) ? 'is-active' : '' }}" title="Compras e inventario operativo">
-                        <svg class="sc-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h5"/></svg>
-                        <span class="sc-label">Operaciones</span>
+            @canany(['suppliers.view', 'purchases.view', 'purchases.create'])
+                <details class="sc-group" {{ $comprasActivo ? 'open' : '' }}>
+                    <summary class="{{ $comprasActivo ? 'is-active' : '' }}" title="Compras">
+                        <svg class="sc-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h8.9a2 2 0 0 0 1.9-1.4L22 9H6M10 21h.01M18 21h.01"/></svg>
+                        <span class="sc-label">Compras</span>
                         <svg class="sc-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
                     </summary>
                     <div class="sc-submenu">
-@can('customers.view')
-    <a href="{{ route('customers.index') }}"
-       class="{{ request()->routeIs('customers.*') ? 'is-active' : '' }}">
-        Clientes
-    </a>
-@endcan
-@can('suppliers.view')
-    <a href="{{ route('suppliers.index') }}"
-       class="{{ request()->routeIs('suppliers.*') ? 'is-active' : '' }}">
-        Proveedores
-    </a>
-@endcan
-                        @can('purchases.view')<a href="{{ route('purchases.index') }}" class="{{ request()->routeIs('purchases.*') ? 'is-active' : '' }}">Compras</a>@endcan
-                        @can('sales.view')<a href="{{ route('sales.index') }}" class="{{ request()->routeIs('sales.*') ? 'is-active' : '' }}">Ventas</a>@endcan
-                        @can('inventory.view')<a href="{{ route('inventory.index') }}" class="{{ request()->routeIs('inventory.*') ? 'is-active' : '' }}">Existencias y kardex</a>@endcan
-                        @can('inventory.view')<a href="{{ route('inventory.adjustments.index') }}" class="{{ request()->routeIs('inventory.adjustments.*') && !request()->routeIs('inventory.adjustments.create') ? 'is-active' : '' }}">Historial de ajustes</a>@endcan
-                        @can('inventory.adjust')<a href="{{ route('inventory.adjustments.create') }}">Registrar ajuste</a>@endcan
-                        @can('reports.view')<a href="{{ route('reports.index') }}" class="{{ request()->routeIs('reports.*') ? 'is-active' : '' }}">Reportes</a>@endcan
+                        @can('suppliers.view')<a href="{{ route('suppliers.index') }}" class="{{ request()->routeIs('suppliers.*') ? 'is-active' : '' }}" @if(request()->routeIs('suppliers.*')) aria-current="page" @endif>Proveedores</a>@endcan
+                        @can('purchases.create')<a href="{{ route('purchases.create') }}" class="{{ request()->routeIs('purchases.create') ? 'is-active' : '' }}" @if(request()->routeIs('purchases.create')) aria-current="page" @endif>Registrar compra</a>@endcan
+                        @can('purchases.view')<a href="{{ route('purchases.index') }}" class="{{ request()->routeIs('purchases.index', 'purchases.show') ? 'is-active' : '' }}" @if(request()->routeIs('purchases.index', 'purchases.show')) aria-current="page" @endif>Consultar compras</a>@endcan
                     </div>
                 </details>
             @endcanany
 
+            @canany(['customers.view', 'sales.view', 'sales.create'])
+                <details class="sc-group" {{ $ventasActiva ? 'open' : '' }}>
+                    <summary class="{{ $ventasActiva ? 'is-active' : '' }}" title="Ventas">
+                        <svg class="sc-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h8.9a2 2 0 0 0 1.9-1.4L22 9H6M10 21h.01M18 21h.01"/></svg>
+                        <span class="sc-label">Ventas</span>
+                        <svg class="sc-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                    </summary>
+                    <div class="sc-submenu">
+                        @can('customers.view')<a href="{{ route('customers.index') }}" class="{{ request()->routeIs('customers.*') ? 'is-active' : '' }}" @if(request()->routeIs('customers.*')) aria-current="page" @endif>Clientes</a>@endcan
+                        @can('sales.create')<a href="{{ route('sales.create') }}" class="{{ request()->routeIs('sales.create') ? 'is-active' : '' }}" @if(request()->routeIs('sales.create')) aria-current="page" @endif>Registrar venta</a>@endcan
+                        @can('sales.view')<a href="{{ route('sales.index') }}" class="{{ request()->routeIs('sales.index', 'sales.show', 'sales.edit') ? 'is-active' : '' }}" @if(request()->routeIs('sales.index', 'sales.show', 'sales.edit')) aria-current="page" @endif>Consultar ventas</a>@endcan
+                    </div>
+                </details>
+            @endcanany
+
+            @canany(['inventory.view', 'inventory.adjust'])
+                <details class="sc-group" {{ $inventarioOperativoActivo ? 'open' : '' }}>
+                    <summary class="{{ $inventarioOperativoActivo ? 'is-active' : '' }}" title="Inventario">
+                        <svg class="sc-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 7 9-4 9 4-9 4-9-4Zm0 5 9 4 9-4M3 17l9 4 9-4"/></svg>
+                        <span class="sc-label">Inventario</span>
+                        <svg class="sc-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                    </summary>
+                    <div class="sc-submenu">
+                        @can('inventory.adjust')<a href="{{ route('inventory.adjustments.create') }}" class="{{ request()->routeIs('inventory.adjustments.create') ? 'is-active' : '' }}" @if(request()->routeIs('inventory.adjustments.create')) aria-current="page" @endif>Registrar ajuste</a>@endcan
+                        @can('inventory.view')<a href="{{ route('inventory.index') }}" class="{{ request()->routeIs('inventory.index') ? 'is-active' : '' }}" @if(request()->routeIs('inventory.index')) aria-current="page" @endif>Existencias y movimientos</a>@endcan
+                        @can('inventory.view')<a href="{{ route('inventory.adjustments.index') }}" class="{{ request()->routeIs('inventory.adjustments.*') && !request()->routeIs('inventory.adjustments.create') ? 'is-active' : '' }}" @if(request()->routeIs('inventory.adjustments.*') && !request()->routeIs('inventory.adjustments.create')) aria-current="page" @endif>Historial de ajustes</a>@endcan
+                    </div>
+                </details>
+            @endcanany
+
+            @can('reports.view')
+                <details class="sc-group" {{ $reportesActivo ? 'open' : '' }}>
+                    <summary class="{{ $reportesActivo ? 'is-active' : '' }}" title="Reportes">
+                        <svg class="sc-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5m0 14h17M8 16v-5m5 5V7m5 9V3"/></svg>
+                        <span class="sc-label">Reportes</span>
+                        <svg class="sc-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                    </summary>
+                    <div class="sc-submenu">
+                        @foreach (['sales' => 'Reporte de ventas', 'purchases' => 'Reporte de compras', 'inventory' => 'Reporte de existencias', 'kardex' => 'Reporte Kardex', 'cancellations' => 'Reporte de anulaciones'] as $reportKey => $reportLabel)
+                            <a href="{{ route('reports.index', ['report' => $reportKey]) }}" class="{{ $reportesActivo && $reporteActual === $reportKey ? 'is-active' : '' }}" @if($reportesActivo && $reporteActual === $reportKey) aria-current="page" @endif>{{ $reportLabel }}</a>
+                        @endforeach
+                    </div>
+                </details>
+            @endcan
+
             @canany(['users.view', 'roles.view'])
-                <details class="sc-group" {{ $seguridadActiva ? 'open' : '' }}>
-                    <summary class="{{ $seguridadActiva ? 'is-active' : '' }}" title="Seguridad">
+                <details class="sc-group" {{ $administracionActiva ? 'open' : '' }}>
+                    <summary class="{{ $administracionActiva ? 'is-active' : '' }}" title="Administración">
                         <svg class="sc-icon" viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                             <rect x="9" y="10" width="6" height="6" rx="1"/>
                             <path d="M10.5 10V8.5a1.5 1.5 0 0 1 3 0V10"/>
                         </svg>
-                        <span class="sc-label">Seguridad</span>
+                        <span class="sc-label">Administración</span>
                         <svg class="sc-chevron" viewBox="0 0 24 24" aria-hidden="true">
                             <path d="m9 18 6-6-6-6"/>
                         </svg>
@@ -161,7 +191,7 @@
                             <a href="{{ route('roles.index') }}"
                                class="{{ request()->routeIs('roles.*') ? 'is-active' : '' }}"
                                @if(request()->routeIs('roles.*')) aria-current="page" @endif>
-                                Roles
+                                Roles y permisos
                             </a>
                         @endcan
                     </div>
@@ -185,7 +215,7 @@
                         <a href="{{ route('settings.edit') }}"
                            class="{{ $configuracionActiva ? 'is-active' : '' }}"
                            @if($configuracionActiva) aria-current="page" @endif>
-                            Empresa
+                            Datos de la empresa
                         </a>
                     </div>
                 </details>

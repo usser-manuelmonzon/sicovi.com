@@ -38,8 +38,8 @@ class ReportController extends Controller
         $columns = match ($type) {
             'purchases' => ['code' => 'Compra', 'document_date' => 'Fecha', 'supplier' => 'Proveedor', 'supplier_reference' => 'Referencia', 'warehouse' => 'Bodega', 'state' => 'Estado', 'total' => 'Total'],
             'inventory' => ['sku' => 'SKU', 'product' => 'Producto', 'category' => 'Categoría', 'warehouse' => 'Bodega', 'quantity' => 'Existencia', 'minimum_stock' => 'Mínimo'],
-            'kardex' => ['occurred_at' => 'Fecha/hora', 'sku' => 'SKU', 'product' => 'Producto', 'warehouse' => 'Bodega', 'movement_type' => 'Movimiento', 'quantity' => 'Cantidad', 'balance_before' => 'Antes', 'balance_after' => 'Después', 'actor' => 'Usuario'],
-            'cancellations' => ['kind' => 'Tipo', 'code' => 'Documento', 'document_date' => 'Fecha documento', 'changed_at' => 'Fecha anulación', 'party' => 'Cliente / proveedor', 'reason' => 'Motivo', 'actor' => 'Usuario', 'total' => 'Total'],
+            'kardex' => ['occurred_at' => 'Fecha/hora', 'sku' => 'SKU', 'product' => 'Producto', 'warehouse' => 'Bodega', 'movement_type' => 'Movimiento', 'source_code' => 'Documento origen', 'quantity' => 'Cantidad', 'balance_before' => 'Antes', 'balance_after' => 'Después', 'actor' => 'Usuario', 'reason' => 'Motivo'],
+            'cancellations' => ['kind' => 'Tipo / estado', 'code' => 'Documento', 'document_date' => 'Fecha documento', 'changed_at' => 'Fecha anulación/cancelación', 'party' => 'Cliente / proveedor', 'reason' => 'Motivo', 'actor' => 'Usuario', 'total' => 'Total'],
             default => ['code' => 'Venta', 'document_date' => 'Fecha', 'customer' => 'Cliente', 'creator' => 'Creada por', 'state' => 'Estado', 'total' => 'Total'],
         };
 
@@ -99,7 +99,13 @@ class ReportController extends Controller
     {
         return DB::table('inventory_movements as m')->join('products as p', 'p.id', '=', 'm.product_id')
             ->join('warehouses as w', 'w.id', '=', 'm.warehouse_id')->join('users as u', 'u.id', '=', 'm.actor_id')
-            ->select(['m.id', 'm.occurred_at', 'p.sku', 'p.name as product', 'w.name as warehouse', 'm.movement_type', 'm.quantity', 'm.balance_before', 'm.balance_after', 'u.name as actor'])
+            ->leftJoin('sale_items as si', 'si.id', '=', 'm.sale_item_id')->leftJoin('sales as sale', 'sale.id', '=', 'si.sale_id')
+            ->leftJoin('purchase_items as pi', 'pi.id', '=', 'm.purchase_item_id')->leftJoin('purchases as purchase', 'purchase.id', '=', 'pi.purchase_id')
+            ->leftJoin('inventory_adjustment_items as ai', 'ai.id', '=', 'm.adjustment_item_id')->leftJoin('inventory_adjustments as adjustment', 'adjustment.id', '=', 'ai.adjustment_id')
+            ->select(['m.id', 'm.occurred_at', 'p.sku', 'p.name as product', 'w.name as warehouse', 'm.movement_type', 'm.quantity', 'm.balance_before', 'm.balance_after', 'm.reason', 'u.name as actor'])
+            ->selectRaw("COALESCE(sale.code, purchase.code, adjustment.code) AS source_code")
+            ->selectRaw("CASE WHEN sale.id IS NOT NULL THEN 'sales' WHEN purchase.id IS NOT NULL THEN 'purchases' WHEN adjustment.id IS NOT NULL THEN 'adjustments' END AS source_type")
+            ->selectRaw('COALESCE(sale.id, purchase.id, adjustment.id) AS source_id')
             ->when(($filters['q'] ?? '') !== '', fn ($q) => $q->where(fn ($n) => $n->where('p.sku', 'ilike', '%'.$filters['q'].'%')->orWhere('p.name', 'ilike', '%'.$filters['q'].'%')))
             ->when(isset($filters['warehouse_id']), fn ($q) => $q->where('m.warehouse_id', $filters['warehouse_id']))
             ->when(isset($filters['movement_type']), fn ($q) => $q->where('m.movement_type', $filters['movement_type']))
@@ -120,11 +126,13 @@ class ReportController extends Controller
     {
         $sales = DB::table('sales as s')->join('users as u', 'u.id', '=', 's.voided_by')->leftJoin('customers as c', 'c.id', '=', 's.customer_id')
             ->where('s.state', 'voided')->selectRaw("'Venta'::text as kind, s.code, s.document_date, s.voided_at as changed_at, s.void_reason as reason, u.name as actor, u.id as actor_id, coalesce(c.name, 'Venta sin cliente') as party, s.total, 'sales'::text as origin");
+        $cancelledSales = DB::table('sales as s')->join('users as u', 'u.id', '=', 's.cancelled_by')->leftJoin('customers as c', 'c.id', '=', 's.customer_id')
+            ->where('s.state', 'cancelled')->selectRaw("'Borrador de venta cancelado'::text as kind, s.code, s.document_date, s.cancelled_at as changed_at, s.cancel_reason as reason, u.name as actor, u.id as actor_id, coalesce(c.name, 'Venta sin cliente') as party, s.total, 'sales'::text as origin");
         $purchases = DB::table('purchases as p')->join('users as u', 'u.id', '=', 'p.voided_by')->join('suppliers as s', 's.id', '=', 'p.supplier_id')
             ->where('p.state', 'voided')->selectRaw("'Compra'::text as kind, p.code, p.document_date, p.voided_at as changed_at, p.void_reason as reason, u.name as actor, u.id as actor_id, s.name as party, p.total, 'purchases'::text as origin");
         $adjustments = DB::table('inventory_adjustments as a')->join('users as u', 'u.id', '=', 'a.voided_by')
             ->where('a.state', 'voided')->selectRaw("'Ajuste'::text as kind, a.code, a.adjustment_date as document_date, a.voided_at as changed_at, a.void_reason as reason, u.name as actor, u.id as actor_id, a.type as party, NULL::numeric as total, 'adjustments'::text as origin");
-        $union = $sales->unionAll($purchases)->unionAll($adjustments);
+        $union = $sales->unionAll($cancelledSales)->unionAll($purchases)->unionAll($adjustments);
         return DB::query()->fromSub($union, 'cancellations')
             ->when(($filters['q'] ?? '') !== '', fn ($q) => $q->where(fn ($n) => $n->where('code', 'ilike', '%'.$filters['q'].'%')->orWhere('reason', 'ilike', '%'.$filters['q'].'%')->orWhere('party', 'ilike', '%'.$filters['q'].'%')))
             ->when(isset($filters['origin']), fn ($q) => $q->where('origin', $filters['origin']))

@@ -122,6 +122,9 @@ class RoleProfilesTest extends DatabaseTestCase
         $warehouse->permissions()->detach(Permission::where('code', 'products.view')->sole()->id);
         $purchasing = Role::where('code', 'purchasing')->sole();
         $purchasing->update(['name' => 'Compras e inventario personalizado']);
+        $purchasing->permissions()->detach(Permission::where('code', 'purchases.void')->sole()->id);
+        $purchasingVoidMigration = require base_path('database/migrations/2026_10_30_130300_grant_purchases_void_to_purchasing.php');
+        $purchasingVoidMigration->up();
         $expectedSupervisor = $supervisor->permissions()->orderBy('code')->pluck('code')->all();
         $expectedWarehouse = $warehouse->permissions()->orderBy('code')->pluck('code')->all();
         $expectedPurchasing = $purchasing->permissions()->orderBy('code')->pluck('code')->all();
@@ -138,6 +141,7 @@ class RoleProfilesTest extends DatabaseTestCase
         $this->assertSame($expectedWarehouse, $warehouse->permissions()->orderBy('code')->pluck('code')->all());
         $this->assertSame('Compras e inventario personalizado', $purchasing->fresh()->name);
         $this->assertSame($expectedPurchasing, $purchasing->permissions()->orderBy('code')->pluck('code')->all());
+        $this->assertFalse($purchasing->permissions()->where('code', 'purchases.void')->exists());
     }
 
     private function actor(string $code): User

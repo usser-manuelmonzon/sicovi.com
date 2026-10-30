@@ -124,6 +124,8 @@ class SaleController extends Controller
             'warehouse',
             'creator',
             'confirmer',
+            'voidedBy',
+            'cancelledBy',
         ]);
 
         return view('sales.show', compact('sale'));
