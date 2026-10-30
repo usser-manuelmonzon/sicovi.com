@@ -53,6 +53,7 @@ class AuditService
     'confirmed_by',
     'confirmed_at',
     'confirmation_idempotency_key',
+    'lines',
 ],
 SaleItem::class => [
     'sale_id',

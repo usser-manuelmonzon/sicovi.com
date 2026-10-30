@@ -137,19 +137,6 @@
                     value="{{ (string) \Illuminate\Support\Str::uuid() }}"
                 >
 
-                @foreach($sale->items as $index => $item)
-                    <input
-                        type="hidden"
-                        name="lines[{{ $index }}][product_id]"
-                        value="{{ $item->product_id }}"
-                    >
-                    <input
-                        type="hidden"
-                        name="lines[{{ $index }}][quantity]"
-                        value="{{ $item->quantity }}"
-                    >
-                @endforeach
-
                 <button type="submit" class="btn btn-primary">
                     Confirmar venta
                 </button>

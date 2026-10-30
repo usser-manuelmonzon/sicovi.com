@@ -4,6 +4,7 @@ use App\Models\Customer;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\User;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -61,7 +62,9 @@ class SaleService
                 'sales.created',
                 $sale,
                 [],
-                $sale->getAttributes(),
+                $sale->getAttributes() + [
+                    'lines' => $this->auditLines($sale->items()->get()),
+                ],
             );
 
             return $sale->fresh(['items', 'customer', 'warehouse']);
@@ -101,6 +104,7 @@ class SaleService
             );
 
             $before = $locked->getAttributes();
+            $before['lines'] = $this->auditLines($locked->items()->get());
 
             $locked->forceFill([
                 'customer_id' => $customerId,
@@ -116,13 +120,15 @@ class SaleService
             $total = $this->saveDraftLines($locked, $normalized);
 
             $locked->forceFill(['total' => $total])->saveOrFail();
+            $after = $locked->getAttributes();
+            $after['lines'] = $this->auditLines($locked->items()->get());
 
             $this->audit->record(
                 $actor,
                 'sales.updated',
                 $locked,
                 $before,
-                $locked->getAttributes(),
+                $after,
             );
 
             return $locked->fresh(['items', 'customer', 'warehouse']);
@@ -133,11 +139,9 @@ class SaleService
      * Confirma un borrador, calcula los precios en el servidor
      * y descuenta inventario una sola vez.
      *
-     * $lines: lista de product_id y quantity.
      */
     public function confirmSale(
         Sale $sale,
-        array $lines,
         User $actor,
         string $idempotencyKey,
     ): Sale {
@@ -153,30 +157,34 @@ class SaleService
             ]);
         }
 
-        $normalized = $this->normalizeRequest($lines);
-
-        if ($normalized === []) {
-            throw ValidationException::withMessages([
-                'lines' => 'La venta debe contener al menos un producto.',
-            ]);
-        }
-
-        $hash = hash('sha256', json_encode([
-            'sale_id' => $sale->id,
-            'lines' => $normalized,
-        ], JSON_THROW_ON_ERROR));
-
-        return DB::transaction(function () use (
-            $sale,
-            $actor,
-            $normalized,
-            $idempotencyKey,
-            $hash
-        ): Sale {
+        try {
+            return DB::transaction(function () use (
+                $sale,
+                $actor,
+                $idempotencyKey,
+            ): Sale {
             $locked = Sale::query()
                 ->whereKey($sale->id)
                 ->lockForUpdate()
                 ->firstOrFail();
+
+            $items = $locked->items()
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('product_id');
+            if ($items->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'lines' => 'La venta debe contener al menos un producto.',
+                ]);
+            }
+            $persistedLines = $items->map(fn (SaleItem $item) => [
+                'product_id' => (int) $item->product_id,
+                'quantity' => (string) $item->quantity,
+            ])->sortKeys()->values()->all();
+            $hash = hash('sha256', json_encode([
+                'sale_id' => $locked->id,
+                'lines' => $persistedLines,
+            ], JSON_THROW_ON_ERROR));
 
             $existing = DB::table('idempotency_records')
                 ->where('user_id', $actor->id)
@@ -205,37 +213,16 @@ class SaleService
 
             $this->validateCustomer($locked->customer_id);
 
-            $items = $locked->items()
-                ->lockForUpdate()
-                ->get()
-                ->keyBy('product_id');
-
-            $existingProductIds = $items->keys()
-                ->map(fn ($id) => (int) $id)
-                ->sort()
-                ->values()
-                ->all();
-
-            if (
-                $existingProductIds !== array_keys($normalized)
-                || $items->isEmpty()
-            ) {
-                throw ValidationException::withMessages([
-                    'lines' =>
-                        'Las líneas enviadas no coinciden con el borrador.',
-                ]);
-            }
-
             $lineTotals = [];
             $inventoryLines = [];
 
-            foreach ($normalized as $productId => $line) {
+            foreach ($items as $productId => $item) {
                 $item = $items->get($productId);
                 $product = $this->productForSale($productId);
 
                 try {
                     $quantity = $this->decimals->quantity(
-                        $line['quantity'],
+                        (string) $item->quantity,
                         (int) $product->decimal_places,
                         true,
                     );
@@ -323,7 +310,33 @@ class SaleService
                 'creator',
                 'confirmer',
             ]);
-        }, 3);
+            }, 3);
+        } catch (UniqueConstraintViolationException $exception) {
+            $existing = DB::table('idempotency_records')
+                ->where('user_id', $actor->id)
+                ->where('action', 'sales.confirm')
+                ->where('idempotency_key', $idempotencyKey)
+                ->first();
+            if (! $existing) {
+                throw $exception;
+            }
+
+            $items = $sale->items()->get()->keyBy('product_id');
+            $hash = hash('sha256', json_encode([
+                'sale_id' => $sale->id,
+                'lines' => $items->map(fn (SaleItem $item) => [
+                    'product_id' => (int) $item->product_id,
+                    'quantity' => (string) $item->quantity,
+                ])->sortKeys()->values()->all(),
+            ], JSON_THROW_ON_ERROR));
+            if (! hash_equals($existing->request_hash, $hash)) {
+                throw ValidationException::withMessages([
+                    'idempotency_key' => 'La clave ya se utilizó con otros datos.',
+                ]);
+            }
+
+            return Sale::query()->findOrFail($existing->result_id);
+        }
     }
 
     /**
@@ -490,5 +503,21 @@ class SaleService
         $text = trim((string) ($value ?? ''));
 
         return $text === '' ? null : $text;
+    }
+
+    /** @param \Illuminate\Support\Collection<int, SaleItem> $items */
+    private function auditLines($items): string
+    {
+        return json_encode(
+            $items->map(fn (SaleItem $item) => [
+                'product_id' => (int) $item->product_id,
+                'product_sku' => $item->product_sku,
+                'product_name' => $item->product_name,
+                'quantity' => (string) $item->quantity,
+                'unit_price' => (string) $item->unit_price,
+                'line_total' => (string) $item->line_total,
+            ])->values()->all(),
+            JSON_THROW_ON_ERROR,
+        );
     }
 }
