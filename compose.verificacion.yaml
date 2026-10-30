@@ -1,0 +1,53 @@
+# Disposable local verification only. No published PostgreSQL port or persistent volume.
+services:
+  database:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: sicovi_test
+      POSTGRES_PASSWORD: ${VERIFY_POSTGRES_PASSWORD:?Run scripts/verificar-despliegue.ps1}
+      VERIFY_APP_PASSWORD: ${VERIFY_APP_PASSWORD:?Run scripts/verificar-despliegue.ps1}
+    tmpfs:
+      - /var/lib/postgresql/data
+    volumes:
+      - ./scripts/cloud/init-verificacion.sh:/docker-entrypoint-initdb.d/10-sicovi.sh:ro
+      - ./scripts/postgresql/supabase.sql:/opt/sicovi-supabase.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d sicovi_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  app:
+    image: sicovi-cloud:verificacion
+    depends_on:
+      database:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${VERIFY_PORT:-18080}:10000"
+    environment:
+      APP_NAME: SICOVI
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${VERIFY_APP_KEY:?Run scripts/verificar-despliegue.ps1}
+      APP_URL: https://sicovi.example.test
+      APP_LOCALE: es
+      APP_FALLBACK_LOCALE: es
+      DISPLAY_TIMEZONE: America/Guatemala
+      TRUSTED_PROXIES: "*"
+      DB_CONNECTION: pgsql
+      DB_HOST: database
+      DB_PORT: "5432"
+      DB_DATABASE: sicovi_test
+      DB_USERNAME: sicovi_app
+      DB_PASSWORD: ${VERIFY_APP_PASSWORD:?Run scripts/verificar-despliegue.ps1}
+      DB_SCHEMA: sicovi
+      DB_SSLMODE: require
+      SESSION_DRIVER: database
+      SESSION_SECURE_COOKIE: "true"
+      SESSION_ENCRYPT: "true"
+      SESSION_SAME_SITE: lax
+      CACHE_STORE: database
+      QUEUE_CONNECTION: sync
+      LOG_CHANNEL: stderr
+      LOG_LEVEL: warning
+      MAIL_MAILER: log
+      SICOVI_DEMO_ACCOUNTS: "false"

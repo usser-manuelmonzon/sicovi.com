@@ -26,6 +26,7 @@ Thumbs.db
 /.env.*
 !/.env.example
 !/.env.testing.example
+!/.env.production.example
 /storage/runtime/
 /tmp/
 *.dump

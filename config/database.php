@@ -98,6 +98,7 @@ return [
             'prefix_indexes' => true,
             'search_path' => env('DB_SCHEMA', 'sicovi'),
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            'sslrootcert' => env('DB_SSLROOTCERT'),
         ],
 
         'sqlsrv' => [

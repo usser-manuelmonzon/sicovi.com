@@ -1,5 +1,10 @@
 # SICOVI — Sistema Integrado de Compras, Ventas e Inventario
 
+Para preparar la publicación con Docker en Render y PostgreSQL de Supabase, siga
+[la guía de despliegue](docs/DESPLIEGUE_RENDER_SUPABASE.md). Incluye variables
+privadas, migraciones controladas y carga opcional de datos ficticios; el arranque
+del contenedor no ejecuta migraciones ni cambia claves.
+
 SICOVI es una aplicación web desarrollada con Laravel para administrar
 operaciones comerciales, catálogo de productos, clientes, compras,
 ventas e inventario. El sistema incorpora controles de acceso por

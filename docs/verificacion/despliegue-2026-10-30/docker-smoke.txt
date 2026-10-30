@@ -1,0 +1,38 @@
+OK: PostgreSQL conectado con TLS
+OK: Proceso sin root y permisos limitados de escritura
+OK: Cuentas locales inseguras bloqueadas en producción
+OK: Excluido de la imagen: .env
+OK: Excluido de la imagen: .env.testing
+OK: Excluido de la imagen: .git
+OK: Excluido de la imagen: storage/runtime
+OK: Excluido de la imagen: node_modules
+OK: Excluido de la imagen: public/hot
+OK: Administrador real creado mediante el comando oficial
+OK: Escenario ficticio generado con servicios de negocio
+OK: Repetir los ejemplos no duplica movimientos
+OK: Endpoint /up público
+OK: Login y enlaces HTTPS detrás del proxy
+OK: Cookie Secure, HttpOnly y SameSite=Lax
+OK: Formulario protegido con token CSRF
+OK: CSRF rechaza un POST sin token
+OK: Inicio de sesión por usuario y contraseña
+OK: Módulo accesible: /
+OK: Módulo accesible: /products
+OK: Módulo accesible: /suppliers
+OK: Módulo accesible: /customers
+OK: Módulo accesible: /purchases
+OK: Módulo accesible: /sales
+OK: Módulo accesible: /inventory
+OK: Módulo accesible: /inventory/adjustments
+OK: Módulo accesible: /reports
+OK: Módulo accesible: /users
+OK: Módulo accesible: /settings
+OK: Sesión cifrada en PostgreSQL y descifrada con APP_KEY estable
+OK: Recurso Vite servido: resources/css/app.css
+OK: Recurso Vite servido: resources/js/app.js
+OK: Imagen servida en Linux: loginDesktop.png
+OK: Imagen servida en Linux: loginCelular.png
+OK: Archivo de entorno inaccesible por HTTP
+OK: Sesión autenticada conservada al recrear el contenedor
+OK: Caché conservada al recrear el contenedor
+Verificación completa: contenedores Linux, TLS PostgreSQL, módulos, CSRF y sesión/caché tras recreación.
