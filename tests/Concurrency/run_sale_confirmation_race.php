@@ -47,6 +47,7 @@ try {
 
     $stage = 'fixture_creation';
     $nonce = bin2hex(random_bytes(16));
+    $stage = 'actor_creation';
     $actor = new User();
     $actor->forceFill([
         'name' => 'Prueba concurrencia ventas '.$nonce,
@@ -57,9 +58,12 @@ try {
     ])->save();
     $warehouseId = (int) DB::table('warehouses')->value('id');
     $unitId = (int) DB::table('units')->where('code', 'UND')->value('id');
+    $stage = 'category_creation';
     $categoryId = DB::table('categories')->insertGetId([
-        'code' => 'RACE-'.$nonce, 'name' => 'Prueba concurrencia '.$nonce,
+        // Category codes are varchar(30); leave room for the RACE- prefix.
+        'code' => 'RACE-'.substr($nonce, 0, 24), 'name' => 'Prueba concurrencia '.$nonce,
     ]);
+    $stage = 'product_creation';
     $productId = DB::table('products')->insertGetId([
         'sku' => 'RACE-'.$nonce, 'name' => 'Producto última unidad '.$nonce,
         'category_id' => $categoryId, 'unit_id' => $unitId,
@@ -70,11 +74,13 @@ try {
         'product_id' => $productId, 'warehouse_id' => $warehouseId,
         'quantity' => '0.000',
     ]);
+    $stage = 'opening_stock_creation';
     app(InventoryService::class)->applyAdjustment($actor, [
         'type' => 'opening', 'adjustment_date' => now()->toDateString(),
         'reason' => 'Preparación de prueba concurrente',
         'lines' => [['product_id' => $productId, 'quantity' => '1']],
     ]);
+    $stage = 'sale_draft_creation';
     $sale = app(SaleService::class)->createDraft($actor, [
         'document_date' => now()->toDateString(),
     ], [['product_id' => $productId, 'quantity' => '1']]);
@@ -168,9 +174,16 @@ try {
             $worker->stop(1);
         }
     }
-    fwrite(STDERR, json_encode([
+    $details = [
         'result' => 'blocked_or_failed', 'stage' => $stage,
         'error_type' => $exception::class, 'fixtures_retained' => true,
-    ], JSON_THROW_ON_ERROR).PHP_EOL);
+    ];
+    if ($exception instanceof \Illuminate\Database\QueryException) {
+        $details['sqlstate'] = $exception->getCode();
+        if (preg_match('/constraint "([^"]+)"/i', $exception->getMessage(), $match)) {
+            $details['constraint'] = $match[1];
+        }
+    }
+    fwrite(STDERR, json_encode($details, JSON_THROW_ON_ERROR).PHP_EOL);
     exit(1);
 }
