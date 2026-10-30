@@ -19,10 +19,15 @@ class SaleController extends Controller
     {
         Gate::authorize('sales.view');
 
+        $validated = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'state' => ['nullable', 'in:draft,confirmed,voided'],
+        ]);
+
         $sales = Sale::query()
             ->with(['customer', 'creator'])
-            ->when($request->filled('q'), function ($query) use ($request): void {
-                $term = trim((string) $request->input('q'));
+            ->when(($validated['q'] ?? '') !== '', function ($query) use ($validated): void {
+                $term = trim((string) $validated['q']);
 
                 $query->where(function ($nested) use ($term): void {
                     $nested->where('code', 'ilike', "%{$term}%")
@@ -31,8 +36,8 @@ class SaleController extends Controller
                         );
                 });
             })
-            ->when($request->filled('state'), fn ($query) =>
-                $query->where('state', $request->input('state'))
+            ->when(isset($validated['state']), fn ($query) =>
+                $query->where('state', $validated['state'])
             )
             ->latest('document_date')
             ->latest('id')
@@ -159,15 +164,11 @@ class SaleController extends Controller
         Gate::authorize('sales.confirm');
 
         $validated = $request->validate([
-            'lines' => ['required', 'array', 'min:1'],
-            'lines.*.product_id' => ['required', 'integer'],
-            'lines.*.quantity' => ['required', 'string'],
             'idempotency_key' => ['required', 'string', 'max:80'],
         ]);
 
         $this->saleService->confirmSale(
             $sale,
-            $validated['lines'],
             $request->user(),
             trim($validated['idempotency_key']),
         );

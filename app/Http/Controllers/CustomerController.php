@@ -19,12 +19,17 @@ class CustomerController extends Controller
     {
         Gate::authorize('customers.view');
 
-        $active = $request->filled('active')
-            ? $request->boolean('active')
+        $validated = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'active' => ['nullable', 'in:0,1'],
+        ]);
+
+        $active = isset($validated['active'])
+            ? $validated['active'] === '1'
             : null;
 
         $customers = $this->customers->search(
-            (string) $request->input('q', ''),
+            (string) ($validated['q'] ?? ''),
             $active,
         );
 

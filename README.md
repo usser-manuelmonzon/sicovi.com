@@ -1,4 +1,4 @@
-# SICOVI --- Sistema de Control de Ventas e Inventario
+# SICOVI — Sistema Integrado de Compras, Ventas e Inventario
 
 SICOVI es una aplicación web desarrollada con Laravel para administrar
 operaciones comerciales, catálogo de productos, clientes, compras,
@@ -28,8 +28,8 @@ consistencia de las operaciones.
     correo y dirección.
 -   Validación del nombre y normalización del identificador tributario
     para prevenir duplicados.
--   Activación y desactivación de clientes, en lugar de eliminarlos
-    físicamente.
+-   Desactivación de clientes sin eliminarlos físicamente. La reactivación
+    no forma parte del flujo actual.
 -   Los clientes inactivos no deben seleccionarse para crear nuevas
     ventas; el servicio también debe validar esta regla en el servidor.
 
@@ -162,8 +162,12 @@ php artisan migrate
 No ejecutes `migrate:fresh`, `db:wipe`, `rollback` ni comandos de
 limpieza contra una base de datos con información que quieras conservar.
 Si estás incorporando el código a una base de datos existente, revisa
-primero qué migraciones ya se aplicaron y crea una copia de seguridad
-antes de cualquier cambio.
+primero `php artisan migrate:status`, confirma que `DB_DATABASE` y el
+esquema `sicovi` sean los correctos y crea una copia de seguridad. Luego
+ejecuta `php artisan migrate` para aplicar solo las migraciones pendientes.
+Las migraciones correctivas agregan guardas e índices sin reinicializar
+las tablas. Nunca uses `migrate:fresh`, `db:wipe`, eliminación manual de
+tablas ni regeneres `APP_KEY` para actualizar una instalación existente.
 
 ### Compilar los recursos y ejecutar
 
@@ -194,9 +198,21 @@ Entre los permisos añadidos para ventas se encuentran:
 
 La disponibilidad de cada acción depende del rol y de los permisos
 asignados al usuario. El seeder `SystemSeeder` define permisos y
-asignaciones iniciales. Antes de volver a ejecutar seeders en una
-instalación existente, revisa su comportamiento y las asignaciones que
-modificarán.
+asignaciones iniciales. Ejecútalo con `php artisan db:seed --class=SystemSeeder`
+solo después de revisar el entorno. Los permisos nuevos se incorporan a
+los roles existentes una sola vez; ejecutar de nuevo el seeder no restaura
+permisos que alguien revocó manualmente. No hay scripts auxiliares de
+concesión de permisos para ventas o clientes.
+
+## Estado del módulo de clientes y ventas
+
+Clientes, borradores, confirmación de ventas, descuentos a través de
+`InventoryService`, auditoría e idempotencia están implementados. Los
+precios se toman del catálogo al crear el borrador y se actualizan al
+confirmar; el importe final queda registrado en la venta confirmada. La
+anulación de ventas y las reversiones de sus salidas quedan pendientes de
+integración con el servicio compartido de anulaciones para conservar una
+sola ruta de reversión en el Kardex.
 
 ## Rutas principales
 
@@ -272,6 +288,21 @@ npm run build
 Antes de probar operaciones que modifican datos, configura una base de
 datos de pruebas separada y verifica la conexión activa. No uses la base
 de datos local con información real para pruebas destructivas.
+
+Las pruebas de clientes y ventas se ejecutan así. La prueba real de
+concurrencia abre dos procesos PHP y conexiones PostgreSQL independientes:
+
+``` bash
+php artisan test --filter='SaleCustomerServiceTest|SalesSchemaTest'
+```
+
+``` powershell
+$env:APP_ENV = 'testing'
+php tests/Concurrency/run_sale_confirmation_race.php
+```
+
+El script verifica la protección de `TestDatabaseGuard`, usa la conexión
+de `.env.testing` y conserva sus fixtures de prueba para no borrar datos.
 
 ## Seguridad y configuración
 

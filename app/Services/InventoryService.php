@@ -294,6 +294,31 @@ class InventoryService
         $this->post($actor, $warehouseId, $this->reversalEntries($originals, 'purchase_item_id', $reason));
     }
 
+    /**
+     * Para el flujo de anulaciones de ventas: la venta debe estar marcada
+     * voided dentro de esta transacción antes de revertir sus salidas.
+     *
+     * @param list<int> $saleItemIds
+     */
+    public function reverseSaleLines(User $actor, int $warehouseId, array $saleItemIds, string $reason): void
+    {
+        $reason = $this->text($reason, 'reason', 'Indique el motivo de la anulación.');
+        $originals = DB::table('inventory_movements')
+            ->whereIn('sale_item_id', $saleItemIds)
+            ->whereNull('reversal_of_id')
+            ->where('movement_type', 'sale')
+            ->whereNotExists(fn ($query) => $query->selectRaw('1')
+                ->from('inventory_movements as reversals')
+                ->whereColumn('reversals.reversal_of_id', 'inventory_movements.id'))
+            ->orderBy('product_id')->orderBy('id')
+            ->get(['id', 'product_id', 'quantity', 'sale_item_id']);
+        if ($originals->count() !== count(array_unique($saleItemIds))) {
+            $this->invalid('lines', 'Faltan salidas de venta que revertir.');
+        }
+
+        $this->post($actor, $warehouseId, $this->reversalEntries($originals, 'sale_item_id', $reason));
+    }
+
     /** Nucleo: inserta movimientos y actualiza saldos en conjunto. */
     private function post(User $actor, int $warehouseId, array $entries): void
     {
