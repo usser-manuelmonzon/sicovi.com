@@ -60,7 +60,18 @@
         <thead><tr>@foreach($columns as $label)<th>{{ $label }}</th>@endforeach</tr></thead>
         <tbody>
             @forelse($rows as $row)
-                <tr>@foreach($columns as $field => $label)<td>@php($value = data_get($row, $field))@if($field === 'total' && $value !== null)Q {{ number_format((float) $value, 2) }}@else{{ $value ?? '—' }}@endif</td>@endforeach</tr>
+                <tr>@foreach($columns as $field => $label)<td>
+                    @php($value = data_get($row, $field))
+                    @if($field === 'source_code' && $value)
+                        @php($sourceRoute = match(data_get($row, 'source_type')) { 'sales' => 'sales.show', 'purchases' => 'purchases.show', 'adjustments' => 'inventory.adjustments.show', default => null })
+                        @php($sourcePermission = match(data_get($row, 'source_type')) { 'sales' => 'sales.view', 'purchases' => 'purchases.view', 'adjustments' => 'inventory.view', default => null })
+                        @if($sourceRoute && $sourcePermission && auth()->user()->hasPermission($sourcePermission))<a href="{{ route($sourceRoute, data_get($row, 'source_id')) }}">{{ $value }}</a>@else{{ $value }}@endif
+                    @elseif($field === 'total' && $value !== null)
+                        Q {{ number_format((float) $value, 2) }}
+                    @else
+                        {{ $value ?? '—' }}
+                    @endif
+                </td>@endforeach</tr>
             @empty<tr><td colspan="{{ count($columns) }}" class="empty-state">No hay datos para esos filtros.</td></tr>@endforelse
         </tbody>
     </table>

@@ -1,0 +1,272 @@
+SICOVI — DOCUMENTACIÓN DE MIGRACIONES Y EVIDENCIAS
+Feature: anulaciones, reportes y controles de ventas
+Fecha: 30/10/2026
+Rama de trabajo solicitada para el PR: feature/anulaciones-consultas-integracion
+
+1. ALCANCE Y REGLAS ACORDADAS
+- sales.void: administración y vendedores.
+- Anulación de compra: administración y Compras. purchases.void ya existía; SystemSeeder lo concede al rol purchasing solo cuando crea ese rol en una instalación nueva.
+- reports.view: solo administración. Reportes sin exportación CSV.
+- Cancelar borrador de venta: conserva estado, actor, fecha y motivo; no mueve inventario.
+- Anular venta confirmada: exige motivo y clave idempotente y revierte las salidas a través de InventoryService dentro de la transacción.
+- Precio: se consulta el precio vigente del catálogo al confirmar la venta y queda guardado.
+- La cancelación de borradores de compra queda fuera del alcance confirmado de V1, pendiente de decisión del equipo de Compras.
+
+2. MIGRACIONES INCLUIDAS
+A. 2026_10_30_130000_grant_sales_void_permission.php
+   Crea sales.void si aún no existe y asigna el permiso nuevo a admin y seller existentes. Como el permiso es nuevo en esta feature, no existía una revocación previa en las instalaciones base. SystemSeeder asigna valores predeterminados al crear roles, pero no restaura después permisos revocados.
+B. 2026_10_30_130100_add_cancelled_sales_drafts.php
+   Agrega cancelled_by, cancelled_at y cancel_reason; amplía las restricciones de sales y evita que un borrador cancelado cambie de estado o datos de cancelación. Los borradores previos siguen en draft.
+C. 2026_10_30_130200_grant_admin_reports_permission.php
+   Crea reports.view, permiso nuevo, y lo asigna a admin existente. La ruta además autoriza en Laravel.
+D. 2026_10_30_130300_grant_purchases_void_to_purchasing.php
+   No modifica asignaciones. purchases.void ya existía y la ausencia del vínculo puede significar revocación manual; la migración no lo restaura. En base existente, Administración debe revisar explícitamente Administración > Roles y asignarlo al rol Compras si la política acordada sigue vigente.
+
+Si una versión anterior de la migración D ya se ejecutó y agregó el vínculo, esta versión modificada no vuelve a ejecutarse automáticamente. Verifica el vínculo y decide manualmente; no se revoca en automático porque no es posible distinguir una asignación deliberada de un permiso restaurado por la versión anterior.
+
+3. CONTROLES YA PRESENTES ANTES DE ESTA CORRECCIÓN
+La guarda PostgreSQL de draft → voided, el índice único parcial de movimientos originales por sale_item_id, y el trigger que verifica producto, bodega y cantidad negativa exacta ya existían en migraciones anteriores de esta rama. No se duplican aquí. El Kardex incluye documento de origen y motivo; la vista condiciona los enlaces a los permisos de la entidad relacionada.
+
+4. PROCEDIMIENTO SEGURO PARA ACTUALIZAR UNA BASE EXISTENTE
+No reemplaces .env o .env.testing. Primero verifica localmente DB_CONNECTION, DB_HOST, DB_PORT, DB_DATABASE y DB_SCHEMA; no publiques credenciales.
+
+En PowerShell de Laragon, selecciona el PHP compatible con composer.json:
+
+   cd C:\Users\luism\Documents\sicovi.com
+   $env:Path = "C:\laragon\bin\php\php-8.4.12-nts-Win32-vs17-x64;$env:Path"
+   php -v
+   php artisan about
+   php artisan migrate:status
+
+Antes de migrar, haz una copia completa de PostgreSQL. Sustituye los marcadores con los valores locales de .env; pg_dump solicita la contraseña si no existe un método local seguro de autenticación:
+
+   $pgHost = '127.0.0.1'
+   $pgPort = 5432
+   $pgDatabase = '<DB_DATABASE de .env>'
+   $pgUser = '<DB_USERNAME de .env>'
+   $backupPath = Join-Path $PWD ("sicovi-backup-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.dump')
+   pg_dump --format=custom --no-owner --no-acl --host $pgHost --port $pgPort --username $pgUser --dbname $pgDatabase --file $backupPath
+   pg_restore --list $backupPath | Select-Object -First 20
+
+Verifica que el archivo exista y que pg_restore liste su contenido. Conserva la copia fuera de la carpeta reemplazada en despliegues. La prueba de restauración debe hacerse en una base aislada, no sobre la base fuente.
+
+Aplica solo migraciones pendientes y confirma el estado:
+
+   php artisan migrate:status
+   php artisan migrate
+   php artisan migrate:status
+
+En despliegue no interactivo, después de revisar la conexión, se puede usar `php artisan migrate --force`.
+
+Consultas de comprobación (ejecutar en psql contra DB_DATABASE correcto):
+
+   SELECT r.code AS role_code, p.code AS permission_code
+   FROM sicovi.role_permissions rp
+   JOIN sicovi.roles r ON r.id = rp.role_id
+   JOIN sicovi.permissions p ON p.id = rp.permission_id
+   WHERE (r.code IN ('admin','seller') AND p.code = 'sales.void')
+      OR (r.code = 'admin' AND p.code = 'reports.view')
+      OR (r.code = 'purchasing' AND p.code = 'purchases.void')
+   ORDER BY r.code, p.code;
+
+   SELECT column_name FROM information_schema.columns
+   WHERE table_schema='sicovi' AND table_name='sales'
+     AND column_name IN ('cancelled_by','cancelled_at','cancel_reason')
+   ORDER BY column_name;
+
+   SELECT conname FROM pg_constraint
+   WHERE conrelid='sicovi.sales'::regclass
+     AND conname IN ('sales_state_check','sales_state_consistency_check');
+
+   SELECT indexname, indexdef FROM pg_indexes
+   WHERE schemaname='sicovi' AND indexname='inventory_movements_sale_item_unique';
+
+No uses migrate:fresh, db:wipe, rollback indiscriminado, truncates, eliminación manual de tablas ni regeneración de APP_KEY para actualizar una instalación con datos. No se deben modificar ventas, existencias o movimientos directamente por SQL para simular operaciones. Si una migración falla, conserva el error, detén el despliegue y prepara una corrección revisada; no marques migraciones a mano ni quites restricciones para continuar.
+
+5. PRUEBAS AUTOMATIZADAS
+Las pruebas de integración deben usar exclusivamente PostgreSQL sicovi_test y esquema sicovi. TestDatabaseGuard comprueba esa identidad antes de que Laravel corra migraciones de prueba.
+
+   php artisan test
+
+Resultado ejecutado en esta rama con PHP 8.4.12 y sicovi_test/sicovi: 237 pruebas y 1440 aserciones aprobadas.
+
+Prueba real de concurrencia de confirmación (dos procesos y conexiones independientes; fixtures de prueba conservados):
+
+   $env:APP_ENV = 'testing'
+   php tests/Concurrency/run_sale_confirmation_race.php
+   Remove-Item Env:APP_ENV
+
+Resultado observado: passed; dos conexiones PostgreSQL distintas, un movimiento original, saldo final 0.000 y fixtures conservados.
+
+La matriz del apartado siguiente diferencia pruebas ejecutadas de validaciones aún pendientes. No apuntes APP_ENV=testing a una base con datos reales.
+
+6. MATRIZ DE VALIDACIÓN
+- Reporte de ventas, compras, existencias, Kardex y anulaciones; acceso de admin y rechazo de viewer: ejecutado en ReportsTest.
+- Flujo funcional: compra de 10, confirmar, vender 4, saldo 6, anular, saldo 10: ejecutado en ReportsTest.
+- Kardex: movimiento de compra, salida de venta y reversión con código de documento y motivo: ejecutado en ReportsTest.
+- Filtros combinados de origen, producto, usuario, rango de fechas, proveedor, bodega y categoría: ejecutado en ReportsTest.
+- Consultas sin resultados y paginación de 25 filas: ejecutado en ReportsTest.
+- HTTP POST ventas/{sale}/void y /cancel: permiso, motivo obligatorio, replay idempotente, clave distinta, borrador, confirmación de cancelado e historial en detalle: ejecutado en SaleCustomerServiceTest.
+- Error inyectado al revertir inventario: estado, movimientos, existencias, auditoría e idempotencia revierten juntos: ejecutado en SaleCustomerServiceTest.
+- Revocación de purchases.void y repetición de SystemSeeder/migración no reotorgan el permiso: ejecutado en RoleProfilesTest.
+- Migraciones contra copia poblada previa a las cuatro migraciones: PENDIENTE. No se recibió una copia sanitizada de esa base; no se aplicaron migraciones contra una base de trabajo o datos reales. Antes de merge, ejecutar el procedimiento de copia/actualización sobre una copia aislada y adjuntar la evidencia.
+- Validación visual en móvil/computadora y capturas: PENDIENTE.
+
+======================================================================
+CÓDIGO COMPLETO: database/migrations/2026_10_30_130000_grant_sales_void_permission.php
+======================================================================
+
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\DB;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        DB::transaction(function (): void {
+            DB::table('permissions')->insertOrIgnore([
+                'code' => 'sales.void',
+                'name' => 'Anular ventas',
+                'group' => 'sales',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $permissionId = DB::table('permissions')->where('code', 'sales.void')->value('id');
+            $roleIds = DB::table('roles')->whereIn('code', ['admin', 'seller'])->pluck('id');
+            foreach ($roleIds as $roleId) {
+                DB::table('role_permissions')->insertOrIgnore([
+                    'role_id' => $roleId,
+                    'permission_id' => $permissionId,
+                ]);
+            }
+        });
+    }
+
+    public function down(): void
+    {
+        throw new RuntimeException('Migración de permiso protegida: retirar permisos exige una revisión explícita de asignaciones.');
+    }
+};
+
+======================================================================
+CÓDIGO COMPLETO: database/migrations/2026_10_30_130100_add_cancelled_sales_drafts.php
+======================================================================
+
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('sales', function ($table): void {
+            $table->foreignId('cancelled_by')->nullable()->after('void_reason')->constrained('users')->restrictOnDelete();
+            $table->timestampTz('cancelled_at')->nullable()->after('cancelled_by');
+            $table->text('cancel_reason')->nullable()->after('cancelled_at');
+        });
+
+        DB::statement('ALTER TABLE sales DROP CONSTRAINT sales_state_check');
+        DB::statement("ALTER TABLE sales ADD CONSTRAINT sales_state_check CHECK (state IN ('draft', 'confirmed', 'voided', 'cancelled'))");
+        DB::statement('ALTER TABLE sales DROP CONSTRAINT sales_state_consistency_check');
+        DB::statement(<<<'SQL'
+ALTER TABLE sales ADD CONSTRAINT sales_state_consistency_check CHECK (
+    (state = 'draft' AND confirmed_at IS NULL AND confirmed_by IS NULL AND confirmation_idempotency_key IS NULL AND voided_at IS NULL AND voided_by IS NULL AND void_reason IS NULL AND cancelled_at IS NULL AND cancelled_by IS NULL AND cancel_reason IS NULL)
+    OR (state = 'confirmed' AND confirmed_at IS NOT NULL AND confirmed_by IS NOT NULL AND voided_at IS NULL AND voided_by IS NULL AND void_reason IS NULL AND cancelled_at IS NULL AND cancelled_by IS NULL AND cancel_reason IS NULL)
+    OR (state = 'voided' AND confirmed_at IS NOT NULL AND confirmed_by IS NOT NULL AND voided_at IS NOT NULL AND voided_by IS NOT NULL AND void_reason IS NOT NULL AND length(btrim(void_reason)) > 0 AND cancelled_at IS NULL AND cancelled_by IS NULL AND cancel_reason IS NULL)
+    OR (state = 'cancelled' AND confirmed_at IS NULL AND confirmed_by IS NULL AND confirmation_idempotency_key IS NULL AND voided_at IS NULL AND voided_by IS NULL AND void_reason IS NULL AND cancelled_at IS NOT NULL AND cancelled_by IS NOT NULL AND cancel_reason IS NOT NULL AND length(btrim(cancel_reason)) > 0)
+)
+SQL);
+
+        DB::unprepared(<<<'SQL'
+CREATE OR REPLACE FUNCTION sicovi.sales_cancelled_state_guard() RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN
+    IF OLD.state = 'cancelled' AND NEW.state <> 'cancelled' THEN
+        RAISE EXCEPTION 'Un borrador cancelado no puede volver a otro estado.' USING ERRCODE = 'check_violation';
+    END IF;
+    IF OLD.state = 'cancelled' AND (
+        NEW.cancelled_by IS DISTINCT FROM OLD.cancelled_by
+        OR NEW.cancelled_at IS DISTINCT FROM OLD.cancelled_at
+        OR NEW.cancel_reason IS DISTINCT FROM OLD.cancel_reason
+        OR NEW.notes IS DISTINCT FROM OLD.notes
+    ) THEN
+        RAISE EXCEPTION 'Los datos de cancelación no se modifican.' USING ERRCODE = 'check_violation';
+    END IF;
+    IF OLD.state = 'draft' AND NEW.state = 'cancelled'
+       AND (NEW.cancelled_by IS NULL OR NEW.cancelled_at IS NULL OR NEW.cancel_reason IS NULL OR length(btrim(NEW.cancel_reason)) = 0) THEN
+        RAISE EXCEPTION 'La cancelación de un borrador requiere actor, fecha y motivo.' USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END
+$fn$;
+CREATE TRIGGER sales_cancelled_state_guard BEFORE UPDATE ON sicovi.sales FOR EACH ROW EXECUTE FUNCTION sicovi.sales_cancelled_state_guard();
+SQL);
+    }
+
+    public function down(): void
+    {
+        throw new RuntimeException('Migración de cancelación protegida: requiere revisión de los borradores cancelados y sus auditorías.');
+    }
+};
+
+======================================================================
+CÓDIGO COMPLETO: database/migrations/2026_10_30_130200_grant_admin_reports_permission.php
+======================================================================
+
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\DB;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        DB::transaction(function (): void {
+            DB::table('permissions')->insertOrIgnore([
+                'code' => 'reports.view', 'name' => 'Consultar reportes', 'group' => 'reports',
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+            $permissionId = DB::table('permissions')->where('code', 'reports.view')->value('id');
+            $adminRoleId = DB::table('roles')->where('code', 'admin')->value('id');
+            if ($adminRoleId !== null) {
+                DB::table('role_permissions')->insertOrIgnore([
+                    'role_id' => $adminRoleId, 'permission_id' => $permissionId,
+                ]);
+            }
+        });
+    }
+
+    public function down(): void
+    {
+        throw new RuntimeException('Migración de permisos de reportes protegida: la retirada requiere revisión explícita.');
+    }
+};
+
+======================================================================
+CÓDIGO COMPLETO: database/migrations/2026_10_30_130300_grant_purchases_void_to_purchasing.php
+======================================================================
+
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        // purchases.void predates this migration. An absent pivot may mean
+        // an intentional revocation, so existing assignments require review
+        // and an explicit change in Administración > Roles.
+        // SystemSeeder grants this permission only when creating a new role.
+    }
+
+    public function down(): void
+    {
+        throw new RuntimeException('Migración de permisos de compras protegida: la retirada requiere revisión explícita.');
+    }
+};

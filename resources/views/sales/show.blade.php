@@ -77,6 +77,27 @@
     @endif
 </div>
 
+@if($sale->state === 'voided')
+    <div class="alert alert-danger mb-4" role="status">
+        <h2 class="h6">Anulación de venta confirmada</h2>
+        <dl class="row mb-0">
+            <dt class="col-sm-3">Anulada por</dt><dd class="col-sm-9">{{ $sale->voidedBy?->name ?? 'Usuario no disponible' }}</dd>
+            <dt class="col-sm-3">Fecha</dt><dd class="col-sm-9">{{ $sale->voided_at?->timezone('America/Guatemala')->format('d/m/Y H:i') ?? '—' }}</dd>
+            <dt class="col-sm-3">Motivo</dt><dd class="col-sm-9">{{ $sale->void_reason ?? '—' }}</dd>
+        </dl>
+    </div>
+@elseif($sale->state === 'cancelled')
+    <div class="alert alert-secondary mb-4" role="status">
+        <h2 class="h6">Cancelación de borrador</h2>
+        <dl class="row mb-0">
+            <dt class="col-sm-3">Cancelado por</dt><dd class="col-sm-9">{{ $sale->cancelledBy?->name ?? 'Usuario no disponible' }}</dd>
+            <dt class="col-sm-3">Fecha</dt><dd class="col-sm-9">{{ $sale->cancelled_at?->timezone('America/Guatemala')->format('d/m/Y H:i') ?? '—' }}</dd>
+            <dt class="col-sm-3">Motivo</dt><dd class="col-sm-9">{{ $sale->cancel_reason ?? '—' }}</dd>
+        </dl>
+        <p class="mb-0">La cancelación no generó movimientos de inventario.</p>
+    </div>
+@endif
+
 <div class="surface table-responsive mb-4">
     <table class="table align-middle mb-0">
         <thead>

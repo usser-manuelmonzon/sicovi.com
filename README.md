@@ -214,9 +214,13 @@ venta confirmada. La anulación de ventas confirmadas está integrada con
 `InventoryService`: cada salida se revierte una sola vez, con motivo,
 actor, auditoría y clave idempotente. El permiso `sales.void` se concede
 por defecto a administradores y vendedores; `purchases.void` corresponde
-a administradores y compras. Las migraciones aditivas aplican esa política
-una sola vez en roles existentes. El seeder no restaura permisos
-revocados manualmente en roles existentes.
+a administradores y compras en instalaciones nuevas. Como `purchases.void`
+ya existía, la migración no lo vuelve a asignar en roles Compras existentes:
+un administrador debe revisar esa asignación explícitamente. Si una versión
+anterior de la migración ya se ejecutó, verifica el permiso en Administración
+> Roles; no lo retires automáticamente porque pudo ser una decisión manual.
+Los permisos nuevos se asignan una vez en sus migraciones y el seeder no
+restaura asignaciones revocadas manualmente.
 
 Los borradores pueden cancelarse conservando motivo, actor y fecha, sin
 movimientos de inventario. Los reportes administrativos de ventas,
@@ -225,6 +229,9 @@ paginación y sin exportación CSV. El ajuste responsive final y la
 coordinación con Luis/Yourguen sobre el flujo completo de anulaciones
 siguen pendientes. No se deben cambiar estados ni movimientos
 directamente en SQL para simular una anulación.
+
+La cancelación de borradores de compra no forma parte del alcance confirmado
+de V1; debe definirse con el equipo de Compras antes de incorporarla.
 
 ## Rutas principales
 

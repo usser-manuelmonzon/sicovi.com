@@ -282,6 +282,87 @@ class SaleCustomerServiceTest extends DatabaseTestCase
         ])->assertForbidden();
     }
 
+    public function test_real_http_routes_void_and_cancel_sales_with_validation_idempotency_and_authorization(): void
+    {
+        $this->addOpeningStock('8');
+        $service = app(SaleService::class);
+        $confirmed = $service->createDraft($this->admin, ['document_date' => '2026-10-29'], [
+            ['product_id' => $this->productId, 'quantity' => '2'],
+        ]);
+        $service->confirmSale($confirmed, $this->admin, 'http-void-confirm');
+        $voidPayload = ['reason' => 'Documento duplicado', 'idempotency_key' => 'http-void-key'];
+
+        $this->actingAs($this->admin)->post('/sales/'.$confirmed->id.'/void', $voidPayload)
+            ->assertRedirect('/sales/'.$confirmed->id);
+        $this->post('/sales/'.$confirmed->id.'/void', $voidPayload)
+            ->assertRedirect('/sales/'.$confirmed->id);
+        $this->from('/sales/'.$confirmed->id)->post('/sales/'.$confirmed->id.'/void', [
+            'reason' => 'Otro intento', 'idempotency_key' => 'http-void-key-2',
+        ])->assertSessionHasErrors('sale');
+        $this->assertSame('voided', $confirmed->fresh()->state);
+        $this->assertSame('8.000', (string) DB::table('inventory_balances')->where('product_id', $this->productId)->value('quantity'));
+        $this->assertSame(1, DB::table('inventory_movements')->where('sale_item_id', $confirmed->items()->value('id'))->whereNotNull('reversal_of_id')->count());
+        $this->get('/sales/'.$confirmed->id)->assertOk()->assertSee('Anulación de venta confirmada')->assertSee('Documento duplicado')->assertSee($this->admin->name);
+
+        $draft = $service->createDraft($this->admin, ['document_date' => '2026-10-29'], [
+            ['product_id' => $this->productId, 'quantity' => '1'],
+        ]);
+        $this->from('/sales/'.$draft->id)->post('/sales/'.$draft->id.'/void', [
+            'reason' => 'No debe anular un borrador', 'idempotency_key' => 'draft-void-key',
+        ])
+            ->assertSessionHasErrors('sale');
+        $this->from('/sales/'.$draft->id)->post('/sales/'.$draft->id.'/void', ['idempotency_key' => 'http-missing-reason'])
+            ->assertSessionHasErrors('reason');
+        $this->post('/sales/'.$draft->id.'/cancel', ['reason' => 'El cliente desistió'])
+            ->assertRedirect('/sales/'.$draft->id);
+        $this->assertSame('cancelled', $draft->fresh()->state);
+        $this->assertSame(0, DB::table('inventory_movements')->where('sale_item_id', $draft->items()->value('id'))->count());
+        $this->get('/sales/'.$draft->id)->assertOk()->assertSee('Cancelación de borrador')->assertSee('El cliente desistió');
+        $this->post('/sales/'.$draft->id.'/confirm', ['idempotency_key' => 'confirm-cancelled-draft'])
+            ->assertSessionHasErrors('sale');
+        $this->from('/sales/'.$draft->id)->post('/sales/'.$draft->id.'/cancel', [])
+            ->assertSessionHasErrors('reason');
+
+        $viewer = new User();
+        $viewer->forceFill([
+            'name' => 'Visor de ventas', 'email' => 'http-void-viewer@example.test',
+            'password' => 'Fixture-only-passphrase-2026!',
+            'role_id' => Role::where('code', 'viewer')->sole()->id, 'active' => true,
+        ])->save();
+        $this->flushSession()->actingAs($viewer)
+            ->post('/sales/'.$confirmed->id.'/void', $voidPayload)->assertForbidden();
+        $this->flushSession()->actingAs($viewer)
+            ->post('/sales/'.$draft->id.'/cancel', ['reason' => 'Sin permiso'])->assertForbidden();
+    }
+
+    public function test_sale_void_http_failure_rolls_back_state_movements_and_audit(): void
+    {
+        $this->addOpeningStock('3');
+        $sale = app(SaleService::class)->createDraft($this->admin, ['document_date' => '2026-10-29'], [
+            ['product_id' => $this->productId, 'quantity' => '1'],
+        ]);
+        app(SaleService::class)->confirmSale($sale, $this->admin, 'rollback-void-confirm');
+        $originalCount = DB::table('inventory_movements')->count();
+        $balance = (string) DB::table('inventory_balances')->where('product_id', $this->productId)->value('quantity');
+        $this->mock(InventoryService::class)->shouldReceive('reverseSaleLines')->once()->andThrow(new \RuntimeException('Fallo simulado al revertir inventario.'));
+
+        $this->withoutExceptionHandling();
+        try {
+            $this->actingAs($this->admin)->post('/sales/'.$sale->id.'/void', [
+                'reason' => 'Prueba de rollback', 'idempotency_key' => 'rollback-void-key',
+            ]);
+            $this->fail('El error de reversión debe propagarse a la prueba para comprobar rollback.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Fallo simulado al revertir inventario.', $exception->getMessage());
+        }
+
+        $this->assertSame('confirmed', $sale->fresh()->state);
+        $this->assertSame($balance, (string) DB::table('inventory_balances')->where('product_id', $this->productId)->value('quantity'));
+        $this->assertSame($originalCount, DB::table('inventory_movements')->count());
+        $this->assertSame(0, DB::table('audit_events')->where('action', 'sales.voided')->where('entity_id', $sale->id)->count());
+        $this->assertSame(0, DB::table('idempotency_records')->where('action', 'sales.void')->count());
+    }
+
     private function addOpeningStock(string $quantity): void
     {
         app(InventoryService::class)->applyAdjustment($this->admin, [
