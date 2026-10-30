@@ -6,6 +6,7 @@ use App\Models\SaleItem;
 use App\Models\User;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
 class SaleService
@@ -337,6 +338,94 @@ class SaleService
 
             return Sale::query()->findOrFail($existing->result_id);
         }
+    }
+
+    /** Anula una venta confirmada y revierte cada salida usando el núcleo compartido de inventario. */
+    public function voidSale(Sale $sale, User $actor, string $reason, string $idempotencyKey): Sale
+    {
+        Gate::forUser($actor)->authorize('sales.void');
+        $reason = trim($reason);
+        $idempotencyKey = trim($idempotencyKey);
+        if ($reason === '' || mb_strlen($reason) > 2000) {
+            throw ValidationException::withMessages(['reason' => 'Indique un motivo válido para la anulación.']);
+        }
+        if ($idempotencyKey === '' || mb_strlen($idempotencyKey) > 80) {
+            throw ValidationException::withMessages(['idempotency_key' => 'La clave debe tener entre 1 y 80 caracteres.']);
+        }
+        $hash = hash('sha256', json_encode(['sale_id' => $sale->id, 'reason' => $reason], JSON_THROW_ON_ERROR));
+
+        try {
+            return DB::transaction(function () use ($sale, $actor, $reason, $idempotencyKey, $hash): Sale {
+                $lookup = fn () => DB::table('idempotency_records')
+                    ->where('user_id', $actor->id)->where('action', 'sales.void')
+                    ->where('idempotency_key', $idempotencyKey)->lockForUpdate()->first();
+                $existing = $lookup();
+                if ($existing) {
+                    return $this->voidReplay($existing, $hash);
+                }
+
+                $locked = Sale::query()->whereKey($sale->id)->lockForUpdate()->firstOrFail();
+                // A competing request for this sale can commit while this one waits on its row lock.
+                $existing = $lookup();
+                if ($existing) {
+                    return $this->voidReplay($existing, $hash);
+                }
+                if ($locked->state !== 'confirmed') {
+                    throw ValidationException::withMessages(['sale' => 'Solo se pueden anular ventas confirmadas.']);
+                }
+
+                $before = $locked->getAttributes();
+                $locked->forceFill(['state' => 'voided', 'voided_by' => $actor->id, 'voided_at' => now(), 'void_reason' => $reason])->saveOrFail();
+                $itemIds = $locked->items()->lockForUpdate()->pluck('id')->all();
+                $this->inventory->reverseSaleLines($actor, $locked->warehouse_id, $itemIds, $reason);
+                $this->audit->record($actor, 'sales.voided', $locked, $before, $locked->getAttributes(), $reason);
+                DB::table('idempotency_records')->insert([
+                    'user_id' => $actor->id, 'action' => 'sales.void', 'idempotency_key' => $idempotencyKey,
+                    'request_hash' => $hash, 'result_type' => Sale::class, 'result_id' => $locked->id, 'created_at' => now(),
+                ]);
+
+                return $locked->fresh(['items', 'customer', 'warehouse', 'creator', 'confirmer']);
+            }, 3);
+        } catch (UniqueConstraintViolationException $exception) {
+            $existing = DB::table('idempotency_records')->where('user_id', $actor->id)
+                ->where('action', 'sales.void')->where('idempotency_key', $idempotencyKey)->first();
+            if (! $existing) {
+                throw $exception;
+            }
+            return $this->voidReplay($existing, $hash);
+        }
+    }
+
+    private function voidReplay(object $existing, string $hash): Sale
+    {
+        if (! hash_equals($existing->request_hash, $hash)) {
+            throw ValidationException::withMessages(['idempotency_key' => 'La clave de anulación ya fue usada con datos diferentes.']);
+        }
+        return Sale::query()->findOrFail($existing->result_id);
+    }
+
+    /** Marca un borrador como cancelado sin emitir movimientos de inventario. */
+    public function cancelDraft(Sale $sale, User $actor, string $reason): Sale
+    {
+        Gate::forUser($actor)->authorize('sales.void');
+        $reason = trim($reason);
+        if ($reason === '' || mb_strlen($reason) > 2000) {
+            throw ValidationException::withMessages(['reason' => 'Indique un motivo válido para cancelar el borrador.']);
+        }
+
+        return DB::transaction(function () use ($sale, $actor, $reason): Sale {
+            $locked = Sale::query()->whereKey($sale->id)->lockForUpdate()->firstOrFail();
+            if ($locked->state !== 'draft') {
+                throw ValidationException::withMessages(['sale' => 'Solo se pueden cancelar ventas en borrador.']);
+            }
+            $before = $locked->getAttributes();
+            $locked->forceFill([
+                'state' => 'cancelled', 'cancelled_by' => $actor->id,
+                'cancelled_at' => now(), 'cancel_reason' => $reason,
+            ])->saveOrFail();
+            $this->audit->record($actor, 'sales.cancelled', $locked, $before, $locked->getAttributes(), $reason);
+            return $locked->fresh(['items', 'customer', 'warehouse', 'creator']);
+        }, 3);
     }
 
     /**

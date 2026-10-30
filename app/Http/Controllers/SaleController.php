@@ -3,6 +3,7 @@ namespace App\Http\Controllers;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Sale;
+use App\Models\User;
 use App\Services\SaleService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,7 +22,11 @@ class SaleController extends Controller
 
         $validated = $request->validate([
             'q' => ['nullable', 'string', 'max:120'],
-            'state' => ['nullable', 'in:draft,confirmed,voided'],
+            'customer_id' => ['nullable', 'integer', 'min:1', 'exists:customers,id'],
+            'created_by' => ['nullable', 'integer', 'min:1', 'exists:users,id'],
+            'state' => ['nullable', 'in:draft,confirmed,voided,cancelled'],
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
         ]);
 
         $sales = Sale::query()
@@ -39,12 +44,28 @@ class SaleController extends Controller
             ->when(isset($validated['state']), fn ($query) =>
                 $query->where('state', $validated['state'])
             )
-            ->latest('document_date')
-            ->latest('id')
+            ->when(isset($validated['customer_id']), fn ($query) =>
+                $query->where('customer_id', $validated['customer_id'])
+            )
+            ->when(isset($validated['created_by']), fn ($query) =>
+                $query->where('created_by', $validated['created_by'])
+            )
+            ->when(isset($validated['from']), fn ($query) =>
+                $query->whereDate('document_date', '>=', $validated['from'])
+            )
+            ->when(isset($validated['to']), fn ($query) =>
+                $query->whereDate('document_date', '<=', $validated['to'])
+            )
+            ->orderByDesc('document_date')
+            ->orderByDesc('id')
             ->paginate(15)
             ->withQueryString();
 
-        return view('sales.index', compact('sales'));
+        return view('sales.index', [
+            'sales' => $sales,
+            'customers' => Customer::query()->orderBy('name')->get(['id', 'name']),
+            'creators' => User::query()->whereIn('id', Sale::query()->select('created_by')->distinct())->orderBy('name')->get(['id', 'name']),
+        ]);
     }
 
     public function create(): View
@@ -176,5 +197,30 @@ class SaleController extends Controller
         return redirect()
             ->route('sales.show', $sale)
             ->with('success', 'Venta confirmada correctamente.');
+    }
+
+    public function void(Request $request, Sale $sale): RedirectResponse
+    {
+        Gate::authorize('sales.void');
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:2000'],
+            'idempotency_key' => ['required', 'string', 'max:80'],
+        ]);
+        $this->saleService->voidSale(
+            $sale,
+            $request->user(),
+            trim($validated['reason']),
+            trim($validated['idempotency_key']),
+        );
+
+        return redirect()->route('sales.show', $sale)->with('success', 'Venta anulada y salida de inventario revertida.');
+    }
+
+    public function cancel(Request $request, Sale $sale): RedirectResponse
+    {
+        Gate::authorize('sales.void');
+        $validated = $request->validate(['reason' => ['required', 'string', 'max:2000']]);
+        $this->saleService->cancelDraft($sale, $request->user(), $validated['reason']);
+        return redirect()->route('sales.show', $sale)->with('success', 'Borrador cancelado sin afectar el inventario.');
     }
 }

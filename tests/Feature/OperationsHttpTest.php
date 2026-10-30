@@ -35,6 +35,16 @@ class OperationsHttpTest extends DatabaseTestCase
         $this->get('/producto-seguro')->assertNotFound();
     }
 
+    public function test_purchase_and_inventory_filter_inputs_are_validated(): void
+    {
+        $this->actingAs($this->admin);
+        $this->get(route('purchases.index', ['from' => 'not-a-date']))->assertSessionHasErrors('from');
+        $this->get(route('inventory.index', ['category_id' => 'not-an-id']))->assertSessionHasErrors('category_id');
+        $this->get(route('inventory.adjustments.index', [
+            'date_from' => '2026-10-20', 'date_to' => '2026-10-19',
+        ]))->assertSessionHasErrors('date_to');
+    }
+
     public function test_supplier_routes_validate_permissions_and_record_audit_events(): void
     {
         $this->actingAs($this->admin);

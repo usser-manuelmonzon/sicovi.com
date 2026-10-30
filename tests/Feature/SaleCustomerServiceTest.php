@@ -171,6 +171,44 @@ class SaleCustomerServiceTest extends DatabaseTestCase
         }
     }
 
+    public function test_sale_void_reverses_once_audits_and_replays_idempotently(): void
+    {
+        $this->addOpeningStock('2');
+        $service = app(SaleService::class);
+        $sale = $service->createDraft($this->admin, ['document_date' => '2026-10-29'], [
+            ['product_id' => $this->productId, 'quantity' => '2'],
+        ]);
+        $sale = $service->confirmSale($sale, $this->admin, 'void-confirm-1');
+
+        $voided = $service->voidSale($sale, $this->admin, 'Error de captura', 'void-key-1');
+        $replay = $service->voidSale($sale, $this->admin, 'Error de captura', 'void-key-1');
+        DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
+
+        $this->assertSame('voided', $voided->state);
+        $this->assertSame($voided->id, $replay->id);
+        $this->assertSame('2.000', DB::table('inventory_balances')->where('product_id', $this->productId)->value('quantity'));
+        $this->assertSame(1, DB::table('inventory_movements')->where('sale_item_id', $sale->items->first()->id)->whereNotNull('reversal_of_id')->count());
+        $this->assertSame(1, DB::table('audit_events')->where('action', 'sales.voided')->where('entity_id', $sale->id)->count());
+        $this->assertSame(1, DB::table('idempotency_records')->where('action', 'sales.void')->count());
+
+        $this->expectException(ValidationException::class);
+        $service->voidSale($sale, $this->admin, 'Motivo distinto', 'void-key-1');
+    }
+
+    public function test_draft_cancellation_is_audited_and_does_not_change_inventory(): void
+    {
+        $sale = app(SaleService::class)->createDraft($this->admin, ['document_date' => '2026-10-29'], [
+            ['product_id' => $this->productId, 'quantity' => '3'],
+        ]);
+        $cancelled = app(SaleService::class)->cancelDraft($sale, $this->admin, 'Cliente desistió');
+        DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
+
+        $this->assertSame('cancelled', $cancelled->state);
+        $this->assertSame('0.000', DB::table('inventory_balances')->where('product_id', $this->productId)->value('quantity'));
+        $this->assertSame(0, DB::table('inventory_movements')->where('sale_item_id', $sale->items->first()->id)->count());
+        $this->assertSame(1, DB::table('audit_events')->where('action', 'sales.cancelled')->where('entity_id', $sale->id)->count());
+    }
+
     public function test_inactive_customer_and_insufficient_stock_are_rejected(): void
     {
         $customerService = app(CustomerService::class);
@@ -228,6 +266,8 @@ class SaleCustomerServiceTest extends DatabaseTestCase
             ->whereNull('reversal_of_id')->value('quantity'));
 
         $this->get('/customers?active=invalid')->assertSessionHasErrors('active');
+        $this->actingAs($this->admin)->get('/sales?from=no-es-fecha')->assertSessionHasErrors('from');
+        $this->get('/sales?to=2026-01-01&from=2026-02-01')->assertSessionHasErrors('to');
 
         $viewer = new User();
         $viewer->forceFill([
@@ -237,6 +277,9 @@ class SaleCustomerServiceTest extends DatabaseTestCase
         ])->save();
         $this->flushSession()->actingAs($viewer)->get('/customers')->assertForbidden();
         $this->get('/sales')->assertForbidden();
+        $this->post('/sales/'.$sale->id.'/void', [
+            'reason' => 'Sin permiso', 'idempotency_key' => 'viewer-void-attempt',
+        ])->assertForbidden();
     }
 
     private function addOpeningStock(string $quantity): void

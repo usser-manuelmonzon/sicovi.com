@@ -40,9 +40,10 @@ class RoleProfilesTest extends DatabaseTestCase
         $expectedWarehouse = [...self::CATALOG_READ, 'inventory.adjust', 'inventory.view', 'inventory.void_adjustment'];
         sort($expectedWarehouse);
         $this->assertSame($expectedWarehouse, Role::where('code', 'warehouse')->sole()->permissions()->orderBy('code')->pluck('code')->all());
-        $expectedSeller = [...self::CATALOG_READ, 'customers.create', 'customers.update', 'customers.view', 'sales.confirm', 'sales.create', 'sales.update', 'sales.view'];
+        $expectedSeller = [...self::CATALOG_READ, 'customers.create', 'customers.update', 'customers.view', 'sales.confirm', 'sales.create', 'sales.update', 'sales.view', 'sales.void'];
         sort($expectedSeller);
         $this->assertSame($expectedSeller, Role::where('code', 'seller')->sole()->permissions()->orderBy('code')->pluck('code')->all());
+        $this->assertTrue(Role::where('code', 'purchasing')->sole()->permissions()->where('code', 'purchases.void')->exists());
         $this->assertSame(self::CATALOG_READ, Role::where('code', 'viewer')->sole()->permissions()->orderBy('code')->pluck('code')->all());
     }
 

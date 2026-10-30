@@ -20,6 +20,7 @@ class Sale extends Model
             'document_date' => 'date:Y-m-d',
             'confirmed_at' => 'datetime',
             'voided_at' => 'datetime',
+            'cancelled_at' => 'datetime',
             'total' => 'decimal:2',
         ];
     }
