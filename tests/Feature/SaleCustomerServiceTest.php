@@ -235,7 +235,7 @@ class SaleCustomerServiceTest extends DatabaseTestCase
             'password' => 'Fixture-only-passphrase-2026!',
             'role_id' => Role::where('code', 'viewer')->sole()->id, 'active' => true,
         ])->save();
-        $this->actingAs($viewer)->get('/customers')->assertForbidden();
+        $this->flushSession()->actingAs($viewer)->get('/customers')->assertForbidden();
         $this->get('/sales')->assertForbidden();
     }
 
