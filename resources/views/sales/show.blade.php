@@ -54,6 +54,7 @@
                     'draft' => 'Borrador',
                     'confirmed' => 'Confirmada',
                     'voided' => 'Anulada',
+                    'cancelled' => 'Borrador cancelado',
                 ][$sale->state] ?? $sale->state }}
             </div>
         </div>
@@ -140,6 +141,41 @@
                 <button type="submit" class="btn btn-primary">
                     Confirmar venta
                 </button>
+            </form>
+        </div>
+    @endcan
+@endif
+
+@if($sale->state === 'confirmed')
+    @can('sales.void')
+        <div class="surface p-4">
+            <h2 class="h5">Anular venta</h2>
+            <p class="text-secondary">La salida de inventario se revertirá una sola vez y quedará registrada en el Kardex.</p>
+            <form action="{{ route('sales.void', $sale) }}" method="POST" class="row g-3">
+                @csrf
+                <div class="col-12">
+                    <label class="form-label" for="void_reason">Motivo</label>
+                    <textarea class="form-control" id="void_reason" name="reason" maxlength="2000" required>{{ old('reason') }}</textarea>
+                </div>
+                <input type="hidden" name="idempotency_key" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
+                <div class="col-12"><button type="submit" class="btn btn-outline-danger">Anular venta</button></div>
+            </form>
+        </div>
+    @endcan
+@endif
+
+@if($sale->state === 'draft')
+    @can('sales.void')
+        <div class="surface p-4 mt-4">
+            <h2 class="h5">Cancelar borrador</h2>
+            <p class="text-secondary">El borrador se conserva en el historial. No se modifican existencias.</p>
+            <form action="{{ route('sales.cancel', $sale) }}" method="POST" class="row g-3">
+                @csrf
+                <div class="col-12">
+                    <label class="form-label" for="cancel_reason">Motivo</label>
+                    <textarea class="form-control" id="cancel_reason" name="reason" maxlength="2000" required>{{ old('reason') }}</textarea>
+                </div>
+                <div class="col-12"><button type="submit" class="btn btn-outline-secondary">Cancelar borrador</button></div>
             </form>
         </div>
     @endcan

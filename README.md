@@ -195,6 +195,7 @@ Entre los permisos añadidos para ventas se encuentran:
 -   `sales.create`
 -   `sales.update`
 -   `sales.confirm`
+-   `sales.void`
 
 La disponibilidad de cada acción depende del rol y de los permisos
 asignados al usuario. El seeder `SystemSeeder` define permisos y
@@ -207,12 +208,23 @@ concesión de permisos para ventas o clientes.
 ## Estado del módulo de clientes y ventas
 
 Clientes, borradores, confirmación de ventas, descuentos a través de
-`InventoryService`, auditoría e idempotencia están implementados. Los
-precios se toman del catálogo al crear el borrador y se actualizan al
-confirmar; el importe final queda registrado en la venta confirmada. La
-anulación de ventas y las reversiones de sus salidas quedan pendientes de
-integración con el servicio compartido de anulaciones para conservar una
-sola ruta de reversión en el Kardex.
+`InventoryService`, auditoría e idempotencia están implementados. Al
+confirmar se utiliza el precio vigente del catálogo y se registra en la
+venta confirmada. La anulación de ventas confirmadas está integrada con
+`InventoryService`: cada salida se revierte una sola vez, con motivo,
+actor, auditoría y clave idempotente. El permiso `sales.void` se concede
+por defecto a administradores y vendedores; `purchases.void` corresponde
+a administradores y compras. Las migraciones aditivas aplican esa política
+una sola vez en roles existentes. El seeder no restaura permisos
+revocados manualmente en roles existentes.
+
+Los borradores pueden cancelarse conservando motivo, actor y fecha, sin
+movimientos de inventario. Los reportes administrativos de ventas,
+compras, existencias, Kardex y anulaciones están disponibles con filtros,
+paginación y sin exportación CSV. El ajuste responsive final y la
+coordinación con Luis/Yourguen sobre el flujo completo de anulaciones
+siguen pendientes. No se deben cambiar estados ni movimientos
+directamente en SQL para simular una anulación.
 
 ## Rutas principales
 

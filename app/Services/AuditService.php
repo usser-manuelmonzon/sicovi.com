@@ -53,6 +53,12 @@ class AuditService
     'confirmed_by',
     'confirmed_at',
     'confirmation_idempotency_key',
+    'voided_by',
+    'voided_at',
+    'void_reason',
+    'cancelled_by',
+    'cancelled_at',
+    'cancel_reason',
     'lines',
 ],
 SaleItem::class => [

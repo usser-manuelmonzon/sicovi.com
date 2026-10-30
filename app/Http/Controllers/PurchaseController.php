@@ -27,21 +27,30 @@ class PurchaseController extends Controller
     public function index(Request $request): View
     {
         Gate::authorize('purchases.view');
+
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'supplier_id' => ['nullable', 'integer', 'min:1', 'exists:suppliers,id'],
+            'state' => ['nullable', 'in:draft,confirmed,voided'],
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
+        ]);
+
         $purchases = Purchase::query()
             ->with('supplier')
-            ->when($request->filled('q'), function ($query) use ($request): void {
-                $term = trim((string) $request->string('q'));
+            ->when(($filters['q'] ?? '') !== '', function ($query) use ($filters): void {
+                $term = trim((string) $filters['q']);
                 $query->where(function ($nested) use ($term): void {
                     $nested->where('code', 'ilike', "%{$term}%")
                         ->orWhere('supplier_reference', 'ilike', "%{$term}%")
                         ->orWhereHas('supplier', fn ($supplier) => $supplier->where('name', 'ilike', "%{$term}%"));
                 });
             })
-            ->when($request->filled('supplier_id'), fn ($query) => $query->where('supplier_id', $request->integer('supplier_id')))
-            ->when($request->filled('state'), fn ($query) => $query->where('state', $request->string('state')))
-            ->when($request->filled('from'), fn ($query) => $query->whereDate('document_date', '>=', $request->date('from')))
-            ->when($request->filled('to'), fn ($query) => $query->whereDate('document_date', '<=', $request->date('to')))
-            ->latest('document_date')->latest('id')->paginate(15)->withQueryString();
+            ->when(isset($filters['supplier_id']), fn ($query) => $query->where('supplier_id', $filters['supplier_id']))
+            ->when(isset($filters['state']), fn ($query) => $query->where('state', $filters['state']))
+            ->when(isset($filters['from']), fn ($query) => $query->whereDate('document_date', '>=', $filters['from']))
+            ->when(isset($filters['to']), fn ($query) => $query->whereDate('document_date', '<=', $filters['to']))
+            ->orderByDesc('document_date')->orderByDesc('id')->paginate(15)->withQueryString();
 
         return view('purchases.index', ['purchases' => $purchases, 'suppliers' => Supplier::query()->where('active', true)->orderBy('name')->get()]);
     }

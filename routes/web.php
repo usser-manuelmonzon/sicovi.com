@@ -8,6 +8,7 @@ use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\RoleController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\UserController;
@@ -73,6 +74,9 @@ Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
     Route::post('purchases/{purchase}/void', [PurchaseController::class, 'void'])->name('purchases.void');
     Route::resource('sales', SaleController::class)->except(['destroy']);
     Route::post('sales/{sale}/confirm', [SaleController::class, 'confirm'])->name('sales.confirm');
+    Route::post('sales/{sale}/void', [SaleController::class, 'void'])->name('sales.void');
+    Route::post('sales/{sale}/cancel', [SaleController::class, 'cancel'])->name('sales.cancel');
+    Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
     Route::get('inventory', [InventoryController::class, 'index'])->name('inventory.index');
     Route::get('inventory/adjustments', [InventoryController::class, 'adjustments'])->name('inventory.adjustments.index');
     Route::get('inventory/adjustments/create', [InventoryController::class, 'createAdjustment'])->name('inventory.adjustments.create');

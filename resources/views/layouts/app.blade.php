@@ -106,9 +106,9 @@
                 </details>
             @endcanany
 
-            @canany(['customers.view', 'suppliers.view', 'purchases.view', 'inventory.view', 'sales.view'])
-                <details class="sc-group" {{ ($comprasActivo || $inventarioOperativoActivo) ? 'open' : '' }}>
-                    <summary class="{{ ($comprasActivo || $inventarioOperativoActivo) ? 'is-active' : '' }}" title="Compras e inventario operativo">
+            @canany(['customers.view', 'suppliers.view', 'purchases.view', 'inventory.view', 'sales.view', 'reports.view'])
+                <details class="sc-group" {{ ($comprasActivo || $inventarioOperativoActivo || request()->routeIs('reports.*')) ? 'open' : '' }}>
+                    <summary class="{{ ($comprasActivo || $inventarioOperativoActivo || request()->routeIs('reports.*')) ? 'is-active' : '' }}" title="Compras e inventario operativo">
                         <svg class="sc-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h5"/></svg>
                         <span class="sc-label">Operaciones</span>
                         <svg class="sc-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
@@ -131,6 +131,7 @@
                         @can('inventory.view')<a href="{{ route('inventory.index') }}" class="{{ request()->routeIs('inventory.*') ? 'is-active' : '' }}">Existencias y kardex</a>@endcan
                         @can('inventory.view')<a href="{{ route('inventory.adjustments.index') }}" class="{{ request()->routeIs('inventory.adjustments.*') && !request()->routeIs('inventory.adjustments.create') ? 'is-active' : '' }}">Historial de ajustes</a>@endcan
                         @can('inventory.adjust')<a href="{{ route('inventory.adjustments.create') }}">Registrar ajuste</a>@endcan
+                        @can('reports.view')<a href="{{ route('reports.index') }}" class="{{ request()->routeIs('reports.*') ? 'is-active' : '' }}">Reportes</a>@endcan
                     </div>
                 </details>
             @endcanany

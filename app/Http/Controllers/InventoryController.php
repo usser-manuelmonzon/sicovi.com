@@ -20,17 +20,22 @@ class InventoryController extends Controller
     public function index(Request $request): View
     {
         Gate::authorize('inventory.view');
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'category_id' => ['nullable', 'integer', 'min:1', 'exists:categories,id'],
+            'low_stock' => ['nullable', 'in:0,1'],
+        ]);
         $warehouse = $this->organization->warehouse();
         $balances = DB::table('inventory_balances as b')
             ->join('products as p', 'p.id', '=', 'b.product_id')
             ->join('units as u', 'u.id', '=', 'p.unit_id')
             ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
             ->where('b.warehouse_id', $warehouse->id)
-            ->when($request->filled('q'), fn ($query) => $query->where(fn ($nested) => $nested->where('p.name', 'ilike', '%'.trim((string) $request->string('q')).'%')->orWhere('p.sku', 'ilike', '%'.trim((string) $request->string('q')).'%')))
-            ->when($request->filled('category_id'), fn ($query) => $query->where('p.category_id', $request->integer('category_id')))
-            ->when($request->boolean('low_stock'), fn ($query) => $query->whereColumn('b.quantity', '<', 'p.minimum_stock'))
+            ->when(($filters['q'] ?? '') !== '', fn ($query) => $query->where(fn ($nested) => $nested->where('p.name', 'ilike', '%'.trim((string) $filters['q']).'%')->orWhere('p.sku', 'ilike', '%'.trim((string) $filters['q']).'%')))
+            ->when(isset($filters['category_id']), fn ($query) => $query->where('p.category_id', $filters['category_id']))
+            ->when(($filters['low_stock'] ?? '0') === '1', fn ($query) => $query->whereColumn('b.quantity', '<', 'p.minimum_stock'))
             ->select('b.*', 'p.name', 'p.sku', 'p.active', 'p.minimum_stock', 'u.abbreviation', 'c.name as category_name')
-            ->orderBy('p.name')->paginate(20)->withQueryString();
+            ->orderBy('p.name')->orderBy('p.id')->paginate(20)->withQueryString();
         $movements = DB::table('inventory_movements as m')->join('products as p', 'p.id', '=', 'm.product_id')->where('m.warehouse_id', $warehouse->id)->latest('m.id')->limit(20)->get(['m.*', 'p.name', 'p.sku']);
 
         return view('inventory.index', ['balances' => $balances, 'movements' => $movements, 'categories' => DB::table('categories')->where('active', true)->orderBy('name')->get()]);
@@ -46,18 +51,25 @@ class InventoryController extends Controller
     public function adjustments(Request $request): View
     {
         Gate::authorize('inventory.view');
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'type' => ['nullable', 'in:opening,extraordinary_entry,count_adjustment'],
+            'state' => ['nullable', 'in:applied,voided'],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:date_from'],
+        ]);
         $warehouse = $this->organization->warehouse();
         $adjustments = InventoryAdjustment::query()
             ->with('creator')
             ->where('warehouse_id', $warehouse->id)
-            ->when($request->filled('q'), fn ($query) => $query->where(function ($nested) use ($request): void {
-                $value = '%'.trim((string) $request->string('q')).'%';
+            ->when(($filters['q'] ?? '') !== '', fn ($query) => $query->where(function ($nested) use ($filters): void {
+                $value = '%'.trim((string) $filters['q']).'%';
                 $nested->where('code', 'ilike', $value)->orWhere('reason', 'ilike', $value);
             }))
-            ->when($request->filled('type'), fn ($query) => $query->where('type', $request->string('type')->toString()))
-            ->when($request->filled('state'), fn ($query) => $query->where('state', $request->string('state')->toString()))
-            ->when($request->filled('date_from'), fn ($query) => $query->whereDate('adjustment_date', '>=', $request->date('date_from')))
-            ->when($request->filled('date_to'), fn ($query) => $query->whereDate('adjustment_date', '<=', $request->date('date_to')))
+            ->when(isset($filters['type']), fn ($query) => $query->where('type', $filters['type']))
+            ->when(isset($filters['state']), fn ($query) => $query->where('state', $filters['state']))
+            ->when(isset($filters['date_from']), fn ($query) => $query->whereDate('adjustment_date', '>=', $filters['date_from']))
+            ->when(isset($filters['date_to']), fn ($query) => $query->whereDate('adjustment_date', '<=', $filters['date_to']))
             ->latest('id')
             ->paginate(20)
             ->withQueryString();
